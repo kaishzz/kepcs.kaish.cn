@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum WhitelistJobStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum CdkStatus {
+  ACTIVE
+  USED
+  REVOKED
+}
+
+enum ManagedNodeStatus {
+  ONLINE
+  OFFLINE
+  DISABLED
+}
+
+enum NodeCommandStatus {
+  PENDING
+  CLAIMED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+model Order {
+  id               String            @id @default(cuid())
+  orderNo          String            @unique
+  productCode      String?
+  productType      String            @default("WHITELIST")
+  targetDatabase   String?
+  cdkType          String?
+  cdkQuantity      Int               @default(1)
+  steamId64        String
+  qq               String?
+  email            String?
+  remark           String?
+  paymentType      String            @default("alipay")
+  subject          String
+  amountFen        Int
+  currency         String            @default("CNY")
+  status           OrderStatus       @default(PENDING)
+  providerName     String            @default("zhupay")
+  providerOrderId  String?           @unique
+  providerResponse Json?
+  paidAt           DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  callbacks        PaymentCallback[]
+  whitelistJobs    WhitelistJob[]
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  description    String?  @db.Text
+  productType    String   @default("WHITELIST")
+  amountFen      Int
+  targetDatabase String   @default("")
+  cdkType        String   @default("")
+  cdkQuantity    Int      @default(1)
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model PaymentCallback {
+  id             String   @id @default(cuid())
+  providerName   String   @default("zhupay")
+  callbackType   String   @default("notify")
+  orderId        String?
+  order          Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  signatureValid Boolean
+  processed      Boolean  @default(false)
+  rawBody        Json
+  createdAt      DateTime @default(now())
+}
+
+model WhitelistJob {
+  id          String             @id @default(cuid())
+  orderId     String
+  order       Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  steamId64   String
+  qq          String?
+  status      WhitelistJobStatus @default(PENDING)
+  notes       String?
+  processedAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@unique([orderId, steamId64])
+}
+
+model Cdk {
+  id                    String    @id @default(cuid())
+  code                  String    @unique
+  status                CdkStatus @default(ACTIVE)
+  createdBySteamId      String
+  ownerSteamId          String
+  note                  String?
+  cdkType               String    @default("")
+  isRedeemable          Boolean   @default(true)
+  sourceProductCode     String?
+  sourceOrderNo         String?   @unique
+  expiresAt             DateTime?
+  usedAt                DateTime?
+  usedBySteamId         String?
+  redeemedTargetSteamId String?
+  redeemedTargetQq      String?
+  redeemedTargetEmail   String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model SiteSetting {
+  key       String   @id
+  value     String   @db.LongText
+  updatedAt DateTime @updatedAt
+}
+
+model RoleGroup {
+  id              String                @id @default(cuid())
+  code            String                @unique
+  name            String
+  note            String?
+  isSystem        Boolean               @default(false)
+  createdBySteamId String
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  permissions     RoleGroupPermission[]
+  members         RoleGroupMember[]
+}
+
+model RoleGroupPermission {
+  id            String    @id @default(cuid())
+  groupId       String
+  group         RoleGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  permissionKey String
+  createdAt     DateTime  @default(now())
+
+  @@unique([groupId, permissionKey])
+  @@index([permissionKey])
+}
+
+model RoleGroupMember {
+  id        String    @id @default(cuid())
+  groupId   String
+  group     RoleGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  steamId   String
+  note      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([groupId, steamId])
+  @@index([steamId])
+}
+
+model DirectUserAccess {
+  steamId        String                 @id
+  note           String?
+  createdBySteamId String
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  permissions    DirectUserPermission[]
+}
+
+model DirectUserPermission {
+  id            String           @id @default(cuid())
+  steamId       String
+  user          DirectUserAccess @relation(fields: [steamId], references: [steamId], onDelete: Cascade)
+  permissionKey String
+  createdAt     DateTime         @default(now())
+
+  @@unique([steamId, permissionKey])
+  @@index([permissionKey])
+}
+
+model ServerTrendSnapshot {
+  id               String   @id @default(cuid())
+  bucketAt         DateTime @unique
+  practiceTotal    Int      @default(0)
+  zeTotal          Int      @default(0)
+  practiceOccupied Int      @default(0)
+  zeOccupied       Int      @default(0)
+  onlinePlayers    Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([bucketAt])
+}
+
+model ManagedNode {
+  id            String            @id @default(cuid())
+  code          String            @unique
+  name          String
+  host          String?
+  note          String?           @db.Text
+  apiKeyHash    String            @unique
+  isActive      Boolean           @default(true)
+  status        ManagedNodeStatus @default(OFFLINE)
+  lastSeenAt    DateTime?
+  lastIp        String?
+  agentVersion  String?
+  lastHeartbeat Json?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  commands      NodeCommand[]
+  logs          NodeCommandLog[]
+  schedules     NodeCommandSchedule[]
+
+  @@index([isActive, createdAt])
+  @@index([lastSeenAt])
+}
+
+model NodeCommand {
+  id              String            @id @default(cuid())
+  nodeId          String
+  node            ManagedNode       @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  commandType     String
+  payload         Json?
+  status          NodeCommandStatus @default(PENDING)
+  createdBySteamId String
+  createdByRole   String?
+  claimedAt       DateTime?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  expiresAt       DateTime?
+  result          Json?
+  errorMessage    String?           @db.Text
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  logs            NodeCommandLog[]
+
+  @@index([nodeId, status, createdAt])
+  @@index([expiresAt])
+}
+
+model NodeCommandLog {
+  id        String      @id @default(cuid())
+  nodeId    String
+  node      ManagedNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  commandId String
+  command   NodeCommand @relation(fields: [commandId], references: [id], onDelete: Cascade)
+  level     String      @default("info")
+  message   String      @db.Text
+  createdAt DateTime    @default(now())
+
+  @@index([commandId, createdAt])
+  @@index([nodeId, createdAt])
+}
+
+model NodeCommandSchedule {
+  id               String      @id @default(cuid())
+  nodeId           String
+  node             ManagedNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  name             String
+  commandType      String
+  payload          Json?
+  intervalMinutes  Int
+  nextRunAt        DateTime
+  lastQueuedAt     DateTime?
+  lastCommandId    String?
+  isActive         Boolean     @default(true)
+  createdBySteamId String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@index([nodeId, isActive, nextRunAt])
+  @@index([isActive, nextRunAt])
+}

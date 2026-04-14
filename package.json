@@ -1,0 +1,49 @@
+{
+  "name": "kepcs-kaish-cn",
+  "version": "0.1.0",
+  "description": "KepCs self-service console with Fastify, Vue 3, Prisma, MySQL and Redis",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "dev:web": "npm --prefix web run dev",
+    "web:install": "npm --prefix web install --include=dev --no-fund --no-audit",
+    "build:web": "npm run web:install && npm --prefix web run build",
+    "prepare:prod": "npm run prisma:generate && npm run build:web",
+    "postinstall": "prisma generate",
+    "start": "node src/server.js",
+    "start:full": "npm run prepare:prod && npm run start",
+    "test": "node --test test/*.test.js",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "keywords": [
+    "zhupay",
+    "steam",
+    "payment",
+    "fastify",
+    "vue",
+    "prisma"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/formbody": "^8.0.2",
+    "@fastify/secure-session": "^8.3.0",
+    "@fastify/static": "^9.0.0",
+    "@prisma/client": "^6.19.2",
+    "axios": "^1.15.0",
+    "dotenv": "^17.4.0",
+    "fastify": "^5.8.4",
+    "ioredis": "^5.10.1",
+    "mysql2": "^3.20.0",
+    "nodemailer": "^8.0.5",
+    "prisma": "^6.19.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

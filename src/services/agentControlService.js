@@ -1,0 +1,493 @@
+const crypto = require("node:crypto");
+const { cdkPrisma } = require("../lib/prisma");
+const { extractAgentApiKey, generateAgentApiKey, hashAgentApiKey } = require("../utils/agentAuth");
+
+const MANAGED_NODE_STATUSES = {
+  ONLINE: "ONLINE",
+  OFFLINE: "OFFLINE",
+  DISABLED: "DISABLED",
+};
+
+const NODE_COMMAND_STATUSES = {
+  PENDING: "PENDING",
+  CLAIMED: "CLAIMED",
+  RUNNING: "RUNNING",
+  SUCCEEDED: "SUCCEEDED",
+  FAILED: "FAILED",
+  CANCELLED: "CANCELLED",
+  EXPIRED: "EXPIRED",
+};
+
+const ONLINE_WINDOW_MS = 45 * 1000;
+
+function normalizeNodeCode(value, fallback = "") {
+  const source = String(value || fallback || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (source) {
+    return source.slice(0, 32);
+  }
+
+  return `node-${crypto.randomBytes(4).toString("hex")}`;
+}
+
+function sanitizeJsonValue(value, fallback = null) {
+  if (value == null) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function currentNodeStatus(row, now = Date.now()) {
+  if (!row?.isActive) {
+    return MANAGED_NODE_STATUSES.DISABLED;
+  }
+
+  const lastSeen = row?.lastSeenAt ? new Date(row.lastSeenAt).getTime() : 0;
+
+  if (!lastSeen || Number.isNaN(lastSeen)) {
+    return MANAGED_NODE_STATUSES.OFFLINE;
+  }
+
+  return now - lastSeen <= ONLINE_WINDOW_MS
+    ? MANAGED_NODE_STATUSES.ONLINE
+    : MANAGED_NODE_STATUSES.OFFLINE;
+}
+
+function serializeManagedNode(row) {
+  if (!row) {
+    return null;
+  }
+
+  const status = currentNodeStatus(row);
+
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    host: row.host || null,
+    note: row.note || null,
+    isActive: Boolean(row.isActive),
+    status,
+    isOnline: status === MANAGED_NODE_STATUSES.ONLINE,
+    lastSeenAt: row.lastSeenAt ? row.lastSeenAt.toISOString() : null,
+    lastIp: row.lastIp || null,
+    agentVersion: row.agentVersion || null,
+    lastHeartbeat: row.lastHeartbeat || null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function serializeNodeCommand(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    nodeId: row.nodeId,
+    commandType: row.commandType,
+    payload: row.payload || {},
+    status: row.status,
+    createdBySteamId: row.createdBySteamId,
+    createdByRole: row.createdByRole || null,
+    claimedAt: row.claimedAt ? row.claimedAt.toISOString() : null,
+    startedAt: row.startedAt ? row.startedAt.toISOString() : null,
+    finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
+    expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+    result: row.result || null,
+    errorMessage: row.errorMessage || null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    node: row.node ? serializeManagedNode(row.node) : undefined,
+  };
+}
+
+function serializeNodeCommandLog(row) {
+  return {
+    id: row.id,
+    nodeId: row.nodeId,
+    commandId: row.commandId,
+    level: row.level,
+    message: row.message,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+async function createManagedNode(payload) {
+  const apiKey = generateAgentApiKey();
+  const row = await cdkPrisma.managedNode.create({
+    data: {
+      code: normalizeNodeCode(payload.code, payload.name),
+      name: String(payload.name || "").trim(),
+      host: String(payload.host || "").trim() || null,
+      note: String(payload.note || "").trim() || null,
+      apiKeyHash: hashAgentApiKey(apiKey),
+      isActive: Boolean(payload.isActive ?? true),
+      status: payload.isActive === false ? MANAGED_NODE_STATUSES.DISABLED : MANAGED_NODE_STATUSES.OFFLINE,
+    },
+  });
+
+  return {
+    node: serializeManagedNode(row),
+    apiKey,
+  };
+}
+
+async function updateManagedNode(id, payload) {
+  const existing = await cdkPrisma.managedNode.findUnique({
+    where: { id: String(id) },
+  });
+
+  if (!existing) {
+    throw new Error("Node not found");
+  }
+
+  const nextIsActive =
+    Object.prototype.hasOwnProperty.call(payload, "isActive")
+      ? Boolean(payload.isActive)
+      : existing.isActive;
+
+  const row = await cdkPrisma.managedNode.update({
+    where: { id: String(id) },
+    data: {
+      code:
+        Object.prototype.hasOwnProperty.call(payload, "code")
+          ? normalizeNodeCode(payload.code, payload.name || existing.name)
+          : undefined,
+      name: Object.prototype.hasOwnProperty.call(payload, "name") ? String(payload.name || "").trim() : undefined,
+      host: Object.prototype.hasOwnProperty.call(payload, "host") ? String(payload.host || "").trim() || null : undefined,
+      note: Object.prototype.hasOwnProperty.call(payload, "note") ? String(payload.note || "").trim() || null : undefined,
+      isActive: nextIsActive,
+      status: nextIsActive ? currentNodeStatus(existing) : MANAGED_NODE_STATUSES.DISABLED,
+    },
+  });
+
+  return serializeManagedNode(row);
+}
+
+async function rotateManagedNodeApiKey(id) {
+  const existing = await cdkPrisma.managedNode.findUnique({
+    where: { id: String(id) },
+  });
+
+  if (!existing) {
+    throw new Error("Node not found");
+  }
+
+  const apiKey = generateAgentApiKey();
+  const row = await cdkPrisma.managedNode.update({
+    where: { id: String(id) },
+    data: {
+      apiKeyHash: hashAgentApiKey(apiKey),
+    },
+  });
+
+  return {
+    node: serializeManagedNode(row),
+    apiKey,
+  };
+}
+
+async function listManagedNodes() {
+  const rows = await cdkPrisma.managedNode.findMany({
+    orderBy: [{ isActive: "desc" }, { name: "asc" }, { createdAt: "asc" }],
+  });
+
+  return rows.map(serializeManagedNode);
+}
+
+async function findManagedNodeByApiKeyFromHeaders(headers) {
+  const apiKey = extractAgentApiKey(headers);
+
+  if (!apiKey) {
+    return null;
+  }
+
+  const row = await cdkPrisma.managedNode.findUnique({
+    where: {
+      apiKeyHash: hashAgentApiKey(apiKey),
+    },
+  });
+
+  return row || null;
+}
+
+async function recordManagedNodeHeartbeat(nodeId, payload, ipAddress) {
+  const now = new Date();
+  const row = await cdkPrisma.managedNode.update({
+    where: { id: String(nodeId) },
+    data: {
+      lastSeenAt: now,
+      lastIp: String(ipAddress || "").trim() || null,
+      agentVersion: String(payload.agentVersion || "").trim() || null,
+      lastHeartbeat: sanitizeJsonValue(
+        {
+          hostname: String(payload.hostname || "").trim() || null,
+          platform: String(payload.platform || "").trim() || null,
+          capabilities: Array.isArray(payload.capabilities)
+            ? payload.capabilities.map((item) => String(item || "").trim()).filter(Boolean)
+            : [],
+          summary: sanitizeJsonValue(payload.summary, {}),
+          stats: sanitizeJsonValue(payload.stats, {}),
+          servers: Array.isArray(payload.servers) ? sanitizeJsonValue(payload.servers, []) : [],
+          metadata: sanitizeJsonValue(payload.metadata, {}),
+        },
+        {},
+      ),
+      status: MANAGED_NODE_STATUSES.ONLINE,
+    },
+  });
+
+  return serializeManagedNode(row);
+}
+
+async function expirePendingCommands(nodeId) {
+  const now = new Date();
+  await cdkPrisma.nodeCommand.updateMany({
+    where: {
+      nodeId: String(nodeId),
+      status: NODE_COMMAND_STATUSES.PENDING,
+      expiresAt: {
+        lt: now,
+      },
+    },
+    data: {
+      status: NODE_COMMAND_STATUSES.EXPIRED,
+      finishedAt: now,
+      errorMessage: "Command expired before claim",
+    },
+  });
+}
+
+async function claimNextNodeCommand(nodeId) {
+  await expirePendingCommands(nodeId);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const next = await cdkPrisma.nodeCommand.findFirst({
+      where: {
+        nodeId: String(nodeId),
+        status: NODE_COMMAND_STATUSES.PENDING,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+
+    if (!next) {
+      return null;
+    }
+
+    const claimedAt = new Date();
+    const updated = await cdkPrisma.nodeCommand.updateMany({
+      where: {
+        id: next.id,
+        status: NODE_COMMAND_STATUSES.PENDING,
+      },
+      data: {
+        status: NODE_COMMAND_STATUSES.CLAIMED,
+        claimedAt,
+      },
+    });
+
+    if (updated.count > 0) {
+      const row = await cdkPrisma.nodeCommand.findUnique({
+        where: { id: next.id },
+      });
+
+      return serializeNodeCommand(row);
+    }
+  }
+
+  return null;
+}
+
+async function markNodeCommandStarted(nodeId, commandId) {
+  const now = new Date();
+  await cdkPrisma.nodeCommand.updateMany({
+    where: {
+      id: String(commandId),
+      nodeId: String(nodeId),
+      status: {
+        in: [NODE_COMMAND_STATUSES.PENDING, NODE_COMMAND_STATUSES.CLAIMED],
+      },
+    },
+    data: {
+      status: NODE_COMMAND_STATUSES.RUNNING,
+      claimedAt: now,
+      startedAt: now,
+    },
+  });
+
+  const row = await cdkPrisma.nodeCommand.findUnique({
+    where: { id: String(commandId) },
+  });
+
+  if (!row || row.nodeId !== String(nodeId)) {
+    throw new Error("Command not found");
+  }
+
+  return serializeNodeCommand(row);
+}
+
+async function finishNodeCommand(nodeId, commandId, payload) {
+  const now = new Date();
+  await cdkPrisma.nodeCommand.updateMany({
+    where: {
+      id: String(commandId),
+      nodeId: String(nodeId),
+      status: {
+        in: [
+          NODE_COMMAND_STATUSES.PENDING,
+          NODE_COMMAND_STATUSES.CLAIMED,
+          NODE_COMMAND_STATUSES.RUNNING,
+        ],
+      },
+    },
+    data: {
+      status: payload.success ? NODE_COMMAND_STATUSES.SUCCEEDED : NODE_COMMAND_STATUSES.FAILED,
+      startedAt: now,
+      finishedAt: now,
+      result: sanitizeJsonValue(payload.result, null),
+      errorMessage: payload.success ? null : String(payload.errorMessage || "").trim() || "Command failed",
+    },
+  });
+
+  const row = await cdkPrisma.nodeCommand.findUnique({
+    where: { id: String(commandId) },
+    include: { node: true },
+  });
+
+  if (!row || row.nodeId !== String(nodeId)) {
+    throw new Error("Command not found");
+  }
+
+  return serializeNodeCommand(row);
+}
+
+async function appendNodeCommandLogs(nodeId, commandId, logs) {
+  const command = await cdkPrisma.nodeCommand.findUnique({
+    where: { id: String(commandId) },
+  });
+
+  if (!command || command.nodeId !== String(nodeId)) {
+    throw new Error("Command not found");
+  }
+
+  const rows = logs
+    .map((item) => ({
+      nodeId: String(nodeId),
+      commandId: String(commandId),
+      level: String(item.level || "info").trim().slice(0, 16) || "info",
+      message: String(item.message || "").trim(),
+    }))
+    .filter((item) => item.message);
+
+  if (!rows.length) {
+    return [];
+  }
+
+  await cdkPrisma.nodeCommandLog.createMany({
+    data: rows,
+  });
+
+  const latestRows = await cdkPrisma.nodeCommandLog.findMany({
+    where: {
+      commandId: String(commandId),
+    },
+    orderBy: [{ createdAt: "desc" }],
+    take: rows.length,
+  });
+
+  return latestRows.reverse().map(serializeNodeCommandLog);
+}
+
+async function createNodeCommand(payload) {
+  const node = await cdkPrisma.managedNode.findUnique({
+    where: { id: String(payload.nodeId) },
+  });
+
+  if (!node) {
+    throw new Error("Node not found");
+  }
+
+  const expiresAt =
+    Number(payload.expiresInSeconds) > 0
+      ? new Date(Date.now() + Number(payload.expiresInSeconds) * 1000)
+      : null;
+
+  const row = await cdkPrisma.nodeCommand.create({
+    data: {
+      nodeId: String(payload.nodeId),
+      commandType: String(payload.commandType || "").trim(),
+      payload: sanitizeJsonValue(payload.payload, {}),
+      status: NODE_COMMAND_STATUSES.PENDING,
+      createdBySteamId: String(payload.createdBySteamId || "").trim(),
+      createdByRole: String(payload.createdByRole || "").trim() || null,
+      expiresAt,
+    },
+    include: { node: true },
+  });
+
+  return serializeNodeCommand(row);
+}
+
+async function listNodeCommands({ nodeId, status, limit = 100 } = {}) {
+  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 100));
+  const rows = await cdkPrisma.nodeCommand.findMany({
+    where: {
+      nodeId: nodeId ? String(nodeId) : undefined,
+      status: status ? String(status) : undefined,
+    },
+    orderBy: [{ createdAt: "desc" }],
+    take: safeLimit,
+    include: {
+      node: true,
+    },
+  });
+
+  return rows.map(serializeNodeCommand);
+}
+
+async function listNodeCommandLogs(commandId, limit = 500) {
+  const safeLimit = Math.max(1, Math.min(1000, Number(limit) || 500));
+  const rows = await cdkPrisma.nodeCommandLog.findMany({
+    where: {
+      commandId: String(commandId),
+    },
+    orderBy: [{ createdAt: "asc" }],
+    take: safeLimit,
+  });
+
+  return rows.map(serializeNodeCommandLog);
+}
+
+module.exports = {
+  MANAGED_NODE_STATUSES,
+  NODE_COMMAND_STATUSES,
+  appendNodeCommandLogs,
+  claimNextNodeCommand,
+  createManagedNode,
+  createNodeCommand,
+  findManagedNodeByApiKeyFromHeaders,
+  finishNodeCommand,
+  listManagedNodes,
+  listNodeCommandLogs,
+  listNodeCommands,
+  markNodeCommandStarted,
+  recordManagedNodeHeartbeat,
+  rotateManagedNodeApiKey,
+  serializeManagedNode,
+  updateManagedNode,
+};
