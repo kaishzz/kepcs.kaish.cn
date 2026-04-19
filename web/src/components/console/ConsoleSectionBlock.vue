@@ -27,7 +27,7 @@ defineProps<{
 <style scoped>
 .console-section-block {
   display: grid;
-  gap: 16px;
+  gap: var(--app-console-section-gap, 18px);
   min-width: 0;
 }
 
@@ -41,14 +41,15 @@ defineProps<{
   align-items: flex-end;
   justify-content: space-between;
   gap: 14px;
-  padding-bottom: 12px;
+  padding-top: 2px;
+  padding-bottom: 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.055);
 }
 
 .console-section-block__copy,
 .console-section-block__body {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -76,12 +77,14 @@ defineProps<{
 
 @media (max-width: 768px) {
   .console-section-block {
-    gap: 14px;
+    gap: var(--app-console-section-gap, 16px);
   }
 
   .console-section-block__header {
     align-items: stretch;
     flex-direction: column;
+    padding-top: 1px;
+    padding-bottom: 12px;
   }
 
   .console-section-block__extra {

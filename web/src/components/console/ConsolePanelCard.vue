@@ -36,7 +36,7 @@ const showHeader = computed(() =>
 <style scoped>
 .console-panel-card__copy {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -51,11 +51,11 @@ const showHeader = computed(() =>
 .console-panel-card__desc {
   color: var(--app-text-muted);
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.75;
 }
 
 .console-panel-card :deep(.n-card-header) {
-  padding-bottom: 14px;
+  padding-bottom: var(--app-console-header-gap, 16px);
 }
 
 @media (max-width: 768px) {
@@ -64,7 +64,7 @@ const showHeader = computed(() =>
   }
 
   .console-panel-card :deep(.n-card-header) {
-    padding-bottom: 12px;
+    padding-bottom: var(--app-console-header-gap, 14px);
   }
 }
 </style>

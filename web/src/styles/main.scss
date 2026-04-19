@@ -30,8 +30,11 @@
   --app-console-active-bg: rgba(99, 226, 182, 0.085);
   --app-console-hover-border: rgba(255, 255, 255, 0.14);
   --app-console-hover-bg: rgba(255, 255, 255, 0.04);
-  --app-console-content-gap: 28px;
-  --app-console-subsection-gap: 20px;
+  --app-console-header-gap: 16px;
+  --app-console-content-gap: 32px;
+  --app-console-block-gap: 16px;
+  --app-console-section-gap: 18px;
+  --app-console-subsection-gap: 22px;
   --app-console-surface-pad-x: 16px;
   --app-console-surface-pad-y: 14px;
   --app-console-surface-pad-y-lg: 16px;
@@ -1176,7 +1179,7 @@ img {
 }
 
 .console-form-card .n-card-header {
-  padding: 14px 16px 12px;
+  padding: 16px 16px var(--app-console-header-gap);
   border-bottom: 1px solid rgba(255, 255, 255, 0.065);
 }
 
@@ -1195,12 +1198,16 @@ img {
   padding-top: var(--app-console-content-gap);
 }
 
-.console-form-card .n-card__content > :is(form, .console-field-grid):first-child {
-  margin-top: 0;
+.console-form-card .n-card__content > :first-child {
+  margin-top: 4px;
+}
+
+.console-form-card .n-card__content > :is(.console-section-block, .console-subsection):first-child {
+  padding-top: 2px;
 }
 
 :is(.console-chart-card, .console-tabs-card, .console-form-card) .n-card__content > * + * {
-  margin-top: 12px;
+  margin-top: var(--app-console-block-gap);
 }
 
 .console-form-card .n-card__content,
@@ -1914,7 +1921,7 @@ img {
 
 .console-subsection {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   padding: var(--app-console-subsection-gap) 0 0;
   border: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -1923,15 +1930,15 @@ img {
 }
 
 .console-form-card .console-subsection:first-child {
-  padding-top: 8px;
+  padding-top: 12px;
   border-top: 0;
 }
 
 .console-subsection__header {
   display: grid;
   gap: 6px;
-  padding-top: 1px;
-  padding-bottom: 12px;
+  padding-top: 2px;
+  padding-bottom: 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.055);
 }
 
@@ -2296,8 +2303,11 @@ img {
 
 @media (max-width: 768px) {
   :root {
-    --app-console-content-gap: 22px;
-    --app-console-subsection-gap: 16px;
+    --app-console-header-gap: 14px;
+    --app-console-content-gap: 24px;
+    --app-console-block-gap: 14px;
+    --app-console-section-gap: 16px;
+    --app-console-subsection-gap: 18px;
     --app-console-surface-pad-x: 14px;
     --app-console-surface-pad-y: 12px;
     --app-console-surface-pad-y-lg: 14px;
@@ -2313,7 +2323,7 @@ img {
   }
 
   .console-form-card .n-card-header {
-    padding: 12px 14px 10px;
+    padding: 12px 14px var(--app-console-header-gap);
   }
 
   :is(.console-chart-card, .console-tabs-card, .console-form-card) .n-card__content {
@@ -2321,12 +2331,12 @@ img {
   }
 
   .console-form-card .n-card__content {
-    padding-top: 18px;
+    padding-top: var(--app-console-content-gap);
   }
 
   .console-subsection__header {
     padding-top: 1px;
-    padding-bottom: 10px;
+    padding-bottom: 12px;
   }
 
   .page-content {
@@ -2524,7 +2534,7 @@ img {
   }
 
   .console-subsection {
-    padding: 16px 0 0;
+    padding: var(--app-console-subsection-gap) 0 0;
   }
 
   .my-overview-grid {
