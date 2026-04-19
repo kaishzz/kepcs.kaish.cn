@@ -15,6 +15,8 @@ import { ref, watch } from 'vue'
 import { http } from '../../lib/api'
 import { CONSOLE_API_BASE } from '../../lib/console'
 import { pushToast } from '../../lib/toast'
+import ConsolePanelCard from './ConsolePanelCard.vue'
+import ConsoleSectionBlock from './ConsoleSectionBlock.vue'
 import type { GotifyChannelItem, GotifyConfig } from '../../types'
 
 const props = defineProps<{
@@ -149,7 +151,10 @@ watch(
 </script>
 
 <template>
-  <NCard embedded title="Gotify 通知渠道" class="console-form-card">
+  <ConsolePanelCard
+    title="Gotify 通知渠道"
+    description="统一管理多渠道 Gotify 配置，后续定时任务与命令通知都复用这里的渠道体系。"
+  >
     <template #header-extra>
       <div class="gotify-panel__actions">
         <NButton secondary @click="loadConfig()">刷新</NButton>
@@ -159,10 +164,10 @@ watch(
     </template>
 
     <div class="gotify-panel">
-      <div class="agent-action-section__header">
-        <strong>多渠道 Gotify</strong>
-        <span>每个渠道都可以绑定一个独立的 Gotify 地址和 App Token，定时任务里可按需勾选多个渠道同时推送。</span>
-      </div>
+      <ConsoleSectionBlock
+        title="多渠道 Gotify"
+        description="每个渠道都可以绑定一个独立的 Gotify 地址和 App Token，定时任务里可按需勾选多个渠道同时推送。"
+      />
 
       <div v-if="loading" class="hero-note min-h-[220px]">
         <NSpin size="large" />
@@ -228,7 +233,7 @@ watch(
         </div>
       </div>
     </div>
-  </NCard>
+  </ConsolePanelCard>
 </template>
 
 <style scoped>

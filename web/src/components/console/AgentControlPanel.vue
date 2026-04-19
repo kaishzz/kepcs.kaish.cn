@@ -23,6 +23,8 @@ import { http } from '../../lib/api'
 import { CONSOLE_API_BASE } from '../../lib/console'
 import { pushToast } from '../../lib/toast'
 import GotifyNotificationPanel from './GotifyNotificationPanel.vue'
+import ConsoleMetricStrip from './ConsoleMetricStrip.vue'
+import ConsolePanelCard from './ConsolePanelCard.vue'
 import ConsoleSegmentedTabs from './ConsoleSegmentedTabs.vue'
 import type {
   GotifyChannelItem,
@@ -1450,18 +1452,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="console-wrap">
-    <div class="agent-summary-grid">
-      <NCard v-for="item in summaryItems" :key="item.label" embedded class="agent-summary-card">
-        <div class="agent-summary-card__label">{{ item.label }}</div>
-        <div class="agent-summary-card__value">{{ item.value }}</div>
-      </NCard>
-    </div>
+    <ConsoleMetricStrip :items="summaryItems" />
 
     <ConsoleSegmentedTabs v-model="agentPanelTab" :options="agentPanelTabOptions" />
 
     <Transition name="console-panel-switch" mode="out-in">
       <div :key="agentPanelTab" class="agent-panel-stack">
-        <NCard v-if="agentPanelTab === 'nodes' && props.canViewNodes" embedded title="节点列表" class="console-form-card">
+        <ConsolePanelCard v-if="agentPanelTab === 'nodes' && props.canViewNodes" title="节点列表" description="统一查看节点状态、基础信息和启停配置。">
         <template #header-extra>
           <NSpace size="small">
             <NButton secondary class="console-action-icon" title="刷新列表" @click="refreshAll()">↻</NButton>
@@ -1540,9 +1537,9 @@ onBeforeUnmount(() => {
               <div class="hero-note__desc">先新增一台 Agent 节点, 然后把生成的令牌填进 `agent.yaml`</div>
             </div>
           </div>
-        </NCard>
+        </ConsolePanelCard>
 
-        <NCard v-else-if="agentPanelTab === 'control' && props.canViewControl" embedded title="服务器操作" class="console-form-card">
+        <ConsolePanelCard v-else-if="agentPanelTab === 'control' && props.canViewControl" title="服务器操作" description="按节点、分组和勾选服务器执行统一的批量操作。">
           <div v-if="selectedNode" class="agent-control-stack">
             <div class="agent-selected-node-banner console-panel-banner">
               <div class="console-panel-banner__copy">
@@ -1679,9 +1676,9 @@ onBeforeUnmount(() => {
               <div class="hero-note__desc">先在节点列表里选中一个节点, 再回来执行服务器操作</div>
             </div>
           </div>
-        </NCard>
+        </ConsolePanelCard>
 
-        <NCard v-else-if="agentPanelTab === 'commands' && props.canViewCommands" embedded title="节点指令" class="console-form-card">
+        <ConsolePanelCard v-else-if="agentPanelTab === 'commands' && props.canViewCommands" title="节点指令" description="集中下发节点维护命令和 RCON 指令，保持统一的命令面板结构。">
           <div v-if="selectedNode" class="agent-control-stack">
             <div class="agent-selected-node-banner console-panel-banner">
               <div class="console-panel-banner__copy">
@@ -1795,9 +1792,9 @@ onBeforeUnmount(() => {
               <div class="hero-note__desc">先在节点列表里选中一个节点, 再回来执行节点指令</div>
             </div>
           </div>
-        </NCard>
+        </ConsolePanelCard>
 
-        <NCard v-else-if="agentPanelTab === 'schedules' && props.canViewSchedules" embedded title="定时任务" class="console-form-card">
+        <ConsolePanelCard v-else-if="agentPanelTab === 'schedules' && props.canViewSchedules" title="定时任务" description="统一维护节点级定时命令、通知渠道和执行频率。">
           <div class="agent-schedule-layout">
             <section class="agent-command-section agent-schedule-editor">
               <div class="agent-action-section__header">
@@ -1946,7 +1943,7 @@ onBeforeUnmount(() => {
               </div>
             </section>
           </div>
-        </NCard>
+        </ConsolePanelCard>
 
         <GotifyNotificationPanel
           v-else-if="agentPanelTab === 'notifications' && props.canViewSchedules"
@@ -1954,7 +1951,7 @@ onBeforeUnmount(() => {
           @updated="handleGotifyConfigUpdated"
         />
 
-        <NCard v-else-if="props.canViewLogs" embedded title="日志管理" class="console-form-card">
+        <ConsolePanelCard v-else-if="props.canViewLogs" title="日志管理" description="统一查看命令历史、结果摘要与执行日志。">
           <div class="agent-log-toolbar">
             <NButton secondary class="console-action-icon" title="刷新日志" @click="refreshAll()">↻</NButton>
           </div>
@@ -2051,7 +2048,7 @@ onBeforeUnmount(() => {
               <div class="hero-note__desc">切到服务器操作执行命令后, 这里就会显示记录</div>
             </div>
           </div>
-        </NCard>
+        </ConsolePanelCard>
       </div>
     </Transition>
 
@@ -2306,7 +2303,7 @@ onBeforeUnmount(() => {
 }
 
 :deep(.console-form-card .n-card__content > :first-child) {
-  margin-top: 6px;
+  margin-top: 0;
 }
 
 .agent-summary-grid,
@@ -2408,10 +2405,16 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
+.agent-detail-section {
+  display: grid;
+  gap: 12px;
+  padding: var(--app-console-surface-pad-y-lg) var(--app-console-surface-pad-x);
+}
+
 .agent-node-card {
   display: grid;
   gap: 12px;
-  padding: 14px 15px;
+  padding: calc(var(--app-console-surface-pad-y-lg) + 2px) var(--app-console-surface-pad-x) var(--app-console-surface-pad-y-lg);
   cursor: pointer;
   transition: border-color 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
 }
@@ -2662,18 +2665,23 @@ onBeforeUnmount(() => {
 
 .agent-command-card__summary,
 .agent-detail-section__body {
-  padding: 0 0 0 12px;
-  border-radius: 0;
-  background: transparent;
-  border: 0;
+  min-height: var(--app-console-summary-min-height);
+  display: grid;
+  align-content: center;
+  padding: var(--app-console-surface-pad-y) var(--app-console-surface-pad-x) var(--app-console-surface-pad-y) calc(var(--app-console-surface-pad-x) + 2px);
+  border-radius: var(--app-radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-left: 2px solid rgba(99, 226, 182, 0.16);
   color: var(--app-text);
   font-size: 13px;
   line-height: 1.7;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
 
 .agent-mini-stat {
-  padding: 12px 14px;
+  padding: var(--app-console-surface-pad-y) var(--app-console-surface-pad-x);
   min-height: 78px;
 }
 
@@ -2711,7 +2719,7 @@ onBeforeUnmount(() => {
 
 .detail-tile,
 .agent-detail-server-item {
-  padding: 14px;
+  padding: var(--app-console-surface-pad-y) var(--app-console-surface-pad-x);
 }
 
 .agent-issued-key__title {
@@ -2732,7 +2740,7 @@ onBeforeUnmount(() => {
   border-radius: var(--app-radius-md);
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 14px;
+  padding: var(--app-console-surface-pad-y) var(--app-console-surface-pad-x);
   color: var(--app-text);
   font-size: 12px;
   line-height: 1.7;
@@ -2741,7 +2749,7 @@ onBeforeUnmount(() => {
 }
 
 .agent-log-item {
-  padding: 12px 14px;
+  padding: var(--app-console-surface-pad-y) var(--app-console-surface-pad-x);
 }
 
 .agent-node-list {
@@ -2838,7 +2846,7 @@ onBeforeUnmount(() => {
   .agent-detail-server-item,
   .agent-server-row,
   .agent-mini-stat {
-    padding: 12px;
+    padding: var(--app-console-surface-pad-y) var(--app-console-surface-pad-x);
   }
 
   .agent-node-card__meta > div {
@@ -2872,11 +2880,6 @@ onBeforeUnmount(() => {
     margin-left: 0;
     justify-content: space-between;
     width: 100%;
-  }
-
-  .agent-command-card__summary,
-  .agent-detail-section__body {
-    padding-left: 10px;
   }
 
   .agent-server-row__side {

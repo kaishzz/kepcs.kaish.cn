@@ -5,6 +5,7 @@ const { extractAgentApiKey, generateAgentApiKey, hashAgentApiKey } = require("..
 const {
   extractNodePayloadMeta,
   sanitizeNodeCommandPayload,
+  stripNodePayloadMeta,
 } = require("../utils/nodeCommandPayloadMeta");
 
 const MANAGED_NODE_STATUSES = {
@@ -92,18 +93,21 @@ function serializeManagedNode(row) {
   };
 }
 
-function serializeNodeCommand(row) {
+function serializeNodeCommand(row, options = {}) {
   if (!row) {
     return null;
   }
 
+  const includeSecrets = Boolean(options.includeSecrets);
   const meta = extractNodePayloadMeta(row.payload);
 
   return {
     id: row.id,
     nodeId: row.nodeId,
     commandType: row.commandType,
-    payload: sanitizeNodeCommandPayload(row.payload),
+    payload: includeSecrets
+      ? stripNodePayloadMeta(row.payload)
+      : sanitizeNodeCommandPayload(row.payload),
     status: row.status,
     createdBySteamId: row.createdBySteamId,
     createdByRole: row.createdByRole || null,
@@ -324,7 +328,7 @@ async function claimNextNodeCommand(nodeId) {
         where: { id: next.id },
       });
 
-      return serializeNodeCommand(row);
+      return serializeNodeCommand(row, { includeSecrets: true });
     }
   }
 
@@ -512,5 +516,6 @@ module.exports = {
   recordManagedNodeHeartbeat,
   rotateManagedNodeApiKey,
   serializeManagedNode,
+  serializeNodeCommand,
   updateManagedNode,
 };

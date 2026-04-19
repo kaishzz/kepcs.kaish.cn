@@ -30,6 +30,12 @@
   --app-console-active-bg: rgba(99, 226, 182, 0.085);
   --app-console-hover-border: rgba(255, 255, 255, 0.14);
   --app-console-hover-bg: rgba(255, 255, 255, 0.04);
+  --app-console-content-gap: 28px;
+  --app-console-subsection-gap: 20px;
+  --app-console-surface-pad-x: 16px;
+  --app-console-surface-pad-y: 14px;
+  --app-console-surface-pad-y-lg: 16px;
+  --app-console-summary-min-height: 64px;
   --app-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
   --app-scrollbar-size: 8px;
   --app-scrollbar-track: rgba(255, 255, 255, 0.024);
@@ -1186,11 +1192,11 @@ img {
 }
 
 .console-form-card .n-card__content {
-  padding-top: 24px;
+  padding-top: var(--app-console-content-gap);
 }
 
 .console-form-card .n-card__content > :is(form, .console-field-grid):first-child {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 :is(.console-chart-card, .console-tabs-card, .console-form-card) .n-card__content > * + * {
@@ -1322,7 +1328,7 @@ img {
 }
 
 .console-wrap .n-form-item-label {
-  padding-bottom: 6px;
+  padding-bottom: 8px;
 }
 
 .console-wrap .n-form-item-label__text {
@@ -1420,7 +1426,7 @@ img {
 }
 
 .console-wrap .detail-tile {
-  padding: 12px 14px;
+  padding: var(--app-console-surface-pad-y) var(--app-console-surface-pad-x);
   border-color: rgba(255, 255, 255, 0.045);
   background: rgba(255, 255, 255, 0.014);
 }
@@ -1909,7 +1915,7 @@ img {
 .console-subsection {
   display: grid;
   gap: 12px;
-  padding: 18px 0 0;
+  padding: var(--app-console-subsection-gap) 0 0;
   border: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   background: transparent;
@@ -1917,7 +1923,7 @@ img {
 }
 
 .console-form-card .console-subsection:first-child {
-  padding-top: 6px;
+  padding-top: 8px;
   border-top: 0;
 }
 
@@ -2092,12 +2098,12 @@ img {
 }
 
 .selection-summary-box {
-  min-height: 40px;
+  min-height: 48px;
   display: grid;
   align-content: center;
   gap: 4px;
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--app-console-surface-pad-y) var(--app-console-surface-pad-x);
   border-top: 1px solid var(--app-border-soft);
   border-right: 0;
   border-bottom: 1px solid var(--app-border-soft);
@@ -2289,6 +2295,15 @@ img {
 }
 
 @media (max-width: 768px) {
+  :root {
+    --app-console-content-gap: 22px;
+    --app-console-subsection-gap: 16px;
+    --app-console-surface-pad-x: 14px;
+    --app-console-surface-pad-y: 12px;
+    --app-console-surface-pad-y-lg: 14px;
+    --app-console-summary-min-height: 56px;
+  }
+
   body {
     overflow: auto;
   }

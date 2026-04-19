@@ -16,6 +16,9 @@ import {
 } from 'naive-ui'
 import { computed, h, ref, watch } from 'vue'
 
+import ConsoleMetricStrip from './ConsoleMetricStrip.vue'
+import ConsolePanelCard from './ConsolePanelCard.vue'
+import ConsoleSectionBlock from './ConsoleSectionBlock.vue'
 import ConsoleSegmentedTabs from './ConsoleSegmentedTabs.vue'
 import DefaultMapMonitorCatalogPanel from './DefaultMapMonitorCatalogPanel.vue'
 import IdleRestartMonitorCatalogPanel from './IdleRestartMonitorCatalogPanel.vue'
@@ -742,27 +745,22 @@ watch(
           :active="active"
         />
 
-        <NCard v-else embedded :title="activeTab === 'kepcs' ? '开水服列表' : '社区服列表'" class="console-form-card">
+        <ConsolePanelCard
+          v-else
+          :title="activeTab === 'kepcs' ? '开水服列表' : '社区服列表'"
+          :description="activeTab === 'kepcs'
+            ? '统一维护开水服服务器目录、基础信息和上架状态。'
+            : '统一维护社区服目录、基础信息和展示顺序。'"
+        >
           <template #header-extra>
             <div class="catalog-header-extra">
               <NButton secondary class="console-action-icon" title="刷新列表" @click="loadCurrentTab">↻</NButton>
             </div>
           </template>
 
-          <div class="catalog-stat-grid">
-            <article v-for="item in listStats" :key="item.label" class="catalog-stat-card">
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
-            </article>
-          </div>
+          <ConsoleMetricStrip :items="listStats" />
 
-          <section class="console-subsection">
-            <div class="catalog-section-head">
-              <div class="catalog-section-head__title">
-                {{ activeTab === 'kepcs' ? '新增开水服服务器' : '新增社区服' }}
-              </div>
-            </div>
-
+          <ConsoleSectionBlock :title="activeTab === 'kepcs' ? '新增开水服服务器' : '新增社区服'">
             <NForm v-if="activeTab === 'kepcs'" label-placement="top" class="console-field-grid cols-2">
               <NFormItem label="ShotID">
                 <NInput v-model:value="kepcsForm.shotId" />
@@ -823,14 +821,9 @@ watch(
                 {{ activeTab === 'kepcs' ? '新增服务器' : '新增社区服' }}
               </NButton>
             </div>
-          </section>
+          </ConsoleSectionBlock>
 
-          <section class="console-subsection">
-            <div class="catalog-section-head">
-              <div class="catalog-section-head__title">
-                {{ activeTab === 'kepcs' ? '开水服数据源' : '社区服数据源' }}
-              </div>
-            </div>
+          <ConsoleSectionBlock :title="activeTab === 'kepcs' ? '开水服数据源' : '社区服数据源'">
 
             <div v-if="loading" class="hero-note min-h-[240px]">
               <NSpin size="large" />
@@ -905,8 +898,8 @@ watch(
                 <div class="hero-note__title">暂无数据</div>
               </div>
             </div>
-          </section>
-        </NCard>
+          </ConsoleSectionBlock>
+        </ConsolePanelCard>
       </div>
     </Transition>
 

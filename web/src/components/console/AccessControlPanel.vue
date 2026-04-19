@@ -17,6 +17,9 @@ import { computed, ref, watch } from 'vue'
 import { http } from '../../lib/api'
 import { CONSOLE_API_BASE } from '../../lib/console'
 import { pushToast } from '../../lib/toast'
+import ConsoleMetricStrip from './ConsoleMetricStrip.vue'
+import ConsolePanelCard from './ConsolePanelCard.vue'
+import ConsoleSectionBlock from './ConsoleSectionBlock.vue'
 import type {
   AccessGroupItem,
   AccessPermissionCatalogItem,
@@ -338,27 +341,20 @@ watch(
 
 <template>
   <div class="console-wrap access-console-wrap">
-    <div class="console-panel-banner access-panel-banner">
-      <div class="console-panel-banner__copy">
-        <strong>权限分配</strong>
-        <span>按权限组或 SteamID 直授管理后台页面与子分组访问范围</span>
-      </div>
-      <div class="access-panel-banner__meta">
+    <ConsolePanelCard
+      title="权限分配"
+      description="按权限组或 SteamID 直授管理后台页面与子分组访问范围，统计条带和内容面板统一复用后台骨架。"
+      class="access-hero-card"
+    >
+      <template #header-extra>
+        <div class="access-panel-banner__meta">
         <NTag round>成员 {{ totalMembers }}</NTag>
         <NTag round type="info">权限目录 {{ editableCatalog.length }}</NTag>
-      </div>
-    </div>
+        </div>
+      </template>
 
-    <div class="access-overview-grid">
-      <div
-        v-for="item in overviewStats"
-        :key="item.label"
-        class="access-overview-card"
-      >
-        <div class="access-overview-card__label">{{ item.label }}</div>
-        <div class="access-overview-card__value">{{ item.value }}</div>
-      </div>
-    </div>
+      <ConsoleMetricStrip :items="overviewStats" />
+    </ConsolePanelCard>
 
     <div v-if="loading" class="hero-note min-h-[260px]">
       <NSpin size="large" />
@@ -366,19 +362,19 @@ watch(
 
     <template v-else>
       <div class="access-main-grid">
-        <NCard embedded class="console-form-card access-card-shell">
-          <div class="console-panel-banner access-card-banner">
-            <div class="console-panel-banner__copy">
-              <strong>权限组</strong>
-              <span>适合给同一批成员分配整组后台权限和子菜单访问范围</span>
-            </div>
+        <ConsolePanelCard
+          title="权限组"
+          description="适合给同一批成员分配整组后台权限和子菜单访问范围。"
+          class="access-card-shell"
+        >
+          <template #header-extra>
             <div class="access-card-banner__actions">
               <NTag round>{{ groups.length }} 组</NTag>
               <NButton secondary @click="openCreateGroup">新增权限组</NButton>
             </div>
-          </div>
+          </template>
 
-          <div class="console-subsection access-card-section">
+          <ConsoleSectionBlock class="access-card-section">
             <div v-if="groups.length" class="access-card-list">
               <article v-for="group in groups" :key="group.id" class="access-entry-card">
                 <div class="access-entry-card__top">
@@ -426,22 +422,22 @@ watch(
                 <div class="hero-note__desc">可以先创建一个权限组, 再给成员勾选对应页面权限</div>
               </div>
             </div>
-          </div>
-        </NCard>
+          </ConsoleSectionBlock>
+        </ConsolePanelCard>
 
-        <NCard embedded class="console-form-card access-card-shell">
-          <div class="console-panel-banner access-card-banner">
-            <div class="console-panel-banner__copy">
-              <strong>SteamID 直授</strong>
-              <span>适合给单个 SteamID 单独开放页面或临时附加某几个操作权限</span>
-            </div>
+        <ConsolePanelCard
+          title="SteamID 直授"
+          description="适合给单个 SteamID 单独开放页面或临时附加某几个操作权限。"
+          class="access-card-shell"
+        >
+          <template #header-extra>
             <div class="access-card-banner__actions">
               <NTag round>{{ directUsers.length }} 人</NTag>
               <NButton secondary @click="openCreateDirectUser">新增直授</NButton>
             </div>
-          </div>
+          </template>
 
-          <div class="console-subsection access-card-section">
+          <ConsoleSectionBlock class="access-card-section">
             <div v-if="directUsers.length" class="access-card-list">
               <article v-for="user in directUsers" :key="user.steamId" class="access-entry-card">
                 <div class="access-entry-card__top">
@@ -485,8 +481,8 @@ watch(
                 <div class="hero-note__desc">适合给单个 SteamID 单独开放某几个页面或子分组</div>
               </div>
             </div>
-          </div>
-        </NCard>
+          </ConsoleSectionBlock>
+        </ConsolePanelCard>
       </div>
 
     </template>

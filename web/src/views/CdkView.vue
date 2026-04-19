@@ -38,6 +38,9 @@ import { useRouter } from 'vue-router'
 import AppShell from '../components/AppShell.vue'
 import AccessControlPanel from '../components/console/AccessControlPanel.vue'
 import AgentControlPanel from '../components/console/AgentControlPanel.vue'
+import ConsoleMetricStrip from '../components/console/ConsoleMetricStrip.vue'
+import ConsolePanelCard from '../components/console/ConsolePanelCard.vue'
+import ConsoleSectionBlock from '../components/console/ConsoleSectionBlock.vue'
 import ConsoleSegmentedTabs from '../components/console/ConsoleSegmentedTabs.vue'
 import ServerCatalogPanel from '../components/console/ServerCatalogPanel.vue'
 import { http } from '../lib/api'
@@ -364,6 +367,12 @@ const tabOptions = computed(() => {
 
   return tabs
 })
+
+const myOverviewStats = computed(() => [
+  { label: '拥有数量', value: myCdks.value.length },
+  { label: '可立即使用', value: myCdks.value.filter((item) => item.isValid).length },
+  { label: '已完成新增', value: myCdks.value.filter((item) => item.status === 'USED').length },
+])
 
 const manageSubTabOptions = [
   { label: '新增 CDK', value: 'create' },
@@ -2238,28 +2247,18 @@ onBeforeUnmount(() => {
         <NTabs v-model:value="activeTab" type="line" animated class="console-tabs">
           <NTabPane name="my-cdks" tab="我的 CDK">
             <div class="console-wrap">
-              <NCard embedded title="我的概览" class="console-form-card">
-                <div class="my-overview-grid">
-                  <div class="detail-tile">
-                    <div class="detail-tile__label">拥有数量</div>
-                    <div class="detail-tile__value">{{ myCdks.length }}</div>
-                  </div>
-                  <div class="detail-tile">
-                    <div class="detail-tile__label">可立即使用</div>
-                    <div class="detail-tile__value">{{ myCdks.filter((item) => item.isValid).length }}</div>
-                  </div>
-                  <div class="detail-tile">
-                    <div class="detail-tile__label">已完成新增</div>
-                    <div class="detail-tile__value">{{ myCdks.filter((item) => item.status === 'USED').length }}</div>
-                  </div>
-                </div>
-              </NCard>
+              <ConsolePanelCard
+                title="我的概览"
+                description="用统一统计条带查看当前账号 CDK 的数量、可用状态和新增完成情况。"
+              >
+                <ConsoleMetricStrip :items="myOverviewStats" />
+              </ConsolePanelCard>
 
-              <NCard embedded title="我的 CDK 列表" class="console-form-card">
-                <div class="console-subsection mb-4">
-                  <div class="console-subsection__header">
-                    <div class="console-subsection__title">列表筛选</div>
-                  </div>
+              <ConsolePanelCard
+                title="我的 CDK 列表"
+                description="统一查看当前账号名下的 CDK，并按状态或时间快速筛选。"
+              >
+                <ConsoleSectionBlock title="列表筛选">
                   <NForm label-placement="top" class="console-field-grid cols-3 console-form-grid console-form-grid--balanced">
                     <NFormItem label="状态">
                       <NSelect v-model:value="myFilters.status" :options="statusOptions" />
@@ -2273,7 +2272,7 @@ onBeforeUnmount(() => {
                       </div>
                     </NFormItem>
                   </NForm>
-                </div>
+                </ConsoleSectionBlock>
                 <div v-if="!isMobileView" class="table-shell table-shell--stable">
                   <NDataTable
                     v-model:expanded-row-keys="myExpandedRowKeys"
@@ -2351,7 +2350,7 @@ onBeforeUnmount(() => {
                     @update:page="myCdkPagination.setPage"
                   />
                 </div>
-              </NCard>
+              </ConsolePanelCard>
             </div>
           </NTabPane>
 
@@ -2361,7 +2360,11 @@ onBeforeUnmount(() => {
 
               <Transition name="console-panel-switch" mode="out-in">
                 <div :key="manageSubTab">
-                  <NCard v-if="manageSubTab === 'create'" embedded title="新增 CDK" class="console-form-card">
+                  <ConsolePanelCard
+                    v-if="manageSubTab === 'create'"
+                    title="新增 CDK"
+                    description="按持有人和有效期生成新的 CDK，表单布局与后台其它新增面板保持一致。"
+                  >
                     <NForm label-placement="top" class="console-field-grid cols-2 console-form-grid">
                       <NFormItem label="持有人 SteamID64">
                         <NAutoComplete
@@ -2390,9 +2393,13 @@ onBeforeUnmount(() => {
                       </NFormItem>
                     </NForm>
                     <NButton type="primary" block :loading="createSubmitting" @click="createCdks">创建 CDK</NButton>
-                  </NCard>
+                  </ConsolePanelCard>
 
-                  <NCard v-else-if="manageSubTab === 'self'" embedded title="给我自己生成" class="console-form-card">
+                  <ConsolePanelCard
+                    v-else-if="manageSubTab === 'self'"
+                    title="给我自己生成"
+                    description="快速给当前账号生成 CDK，使用和新增面板一致的字段节奏与按钮位置。"
+                  >
                     <NForm label-placement="top" class="console-field-grid cols-2 console-form-grid">
                       <NFormItem label="本账号 SteamID64">
                         <NInput :value="auth.user.steamId" readonly />
@@ -2417,15 +2424,15 @@ onBeforeUnmount(() => {
                       </NFormItem>
                     </NForm>
                     <NButton secondary block :loading="createSubmitting" @click="createMyCdks">生成给自己</NButton>
-                  </NCard>
+                  </ConsolePanelCard>
 
                   <div v-else class="console-panel-stack">
-                    <NCard embedded title="批量管理" class="console-form-card">
+                    <ConsolePanelCard
+                      title="批量管理"
+                      description="先筛选目标列表，再对勾选 CDK 执行批量备注、转移、状态调整或删除。"
+                    >
                       <div class="console-panel-stack">
-                        <div class="console-subsection">
-                          <div class="console-subsection__header">
-                            <div class="console-subsection__title">列表筛选</div>
-                          </div>
+                        <ConsoleSectionBlock title="列表筛选">
                           <NForm label-placement="top" class="console-field-grid cols-4 console-form-grid console-form-grid--balanced">
                             <NFormItem label="状态">
                               <NSelect v-model:value="manageFilters.status" :options="statusOptions" />
@@ -2446,12 +2453,9 @@ onBeforeUnmount(() => {
                               </div>
                             </NFormItem>
                           </NForm>
-                        </div>
+                        </ConsoleSectionBlock>
 
-                        <div class="console-subsection">
-                          <div class="console-subsection__header">
-                            <div class="console-subsection__title">批量操作</div>
-                          </div>
+                        <ConsoleSectionBlock title="批量操作">
                           <NForm label-placement="top" class="console-field-grid cols-4 console-form-grid console-form-grid--balanced console-batch-form">
                             <NFormItem label="批量动作">
                               <NSelect v-model:value="batchForm.action" :options="batchActionOptions" />
@@ -2502,11 +2506,15 @@ onBeforeUnmount(() => {
                               </NButton>
                             </NFormItem>
                           </NForm>
-                        </div>
+                        </ConsoleSectionBlock>
                       </div>
-                    </NCard>
+                    </ConsolePanelCard>
 
-                    <NCard embedded title="全部 CDK" class="console-form-card console-manage-table-card">
+                    <ConsolePanelCard
+                      title="全部 CDK"
+                      description="统一查看管理范围内的全部 CDK，桌面端和移动端共用同一套卡片节奏。"
+                      class="console-manage-table-card"
+                    >
                       <div v-if="!isMobileView" class="table-shell table-shell--stable">
                         <NDataTable
                           v-model:checked-row-keys="checkedRowKeys"
@@ -2589,7 +2597,7 @@ onBeforeUnmount(() => {
                           @update:page="managedCdkPagination.setPage"
                         />
                       </div>
-                    </NCard>
+                    </ConsolePanelCard>
                   </div>
                 </div>
               </Transition>
@@ -2602,21 +2610,27 @@ onBeforeUnmount(() => {
 
               <Transition name="console-panel-switch" mode="out-in">
                 <div :key="logSubTab">
-                  <NCard v-if="logSubTab === 'audit' && canViewAuditLogs" embedded title="操作日志" class="console-form-card">
-                    <NForm label-placement="top" class="console-field-grid cols-4 console-form-grid mb-4">
-                      <NFormItem label="操作者 SteamID64">
-                        <NInput v-model:value="logFilters.actorSteamId" />
-                      </NFormItem>
-                      <NFormItem label="身份">
-                        <NSelect v-model:value="logFilters.actorRole" clearable :options="logRoleOptions" />
-                      </NFormItem>
-                      <NFormItem label="动作">
-                        <NInput v-model:value="logFilters.action" />
-                      </NFormItem>
-                      <NFormItem label="目标类型">
-                        <NInput v-model:value="logFilters.targetType" />
-                      </NFormItem>
-                    </NForm>
+                  <ConsolePanelCard
+                    v-if="logSubTab === 'audit' && canViewAuditLogs"
+                    title="操作日志"
+                    description="统一查看后台操作流水，并按操作者、身份、动作和目标类型筛选。"
+                  >
+                    <ConsoleSectionBlock title="筛选条件">
+                      <NForm label-placement="top" class="console-field-grid cols-4 console-form-grid">
+                        <NFormItem label="操作者 SteamID64">
+                          <NInput v-model:value="logFilters.actorSteamId" />
+                        </NFormItem>
+                        <NFormItem label="身份">
+                          <NSelect v-model:value="logFilters.actorRole" clearable :options="logRoleOptions" />
+                        </NFormItem>
+                        <NFormItem label="动作">
+                          <NInput v-model:value="logFilters.action" />
+                        </NFormItem>
+                        <NFormItem label="目标类型">
+                          <NInput v-model:value="logFilters.targetType" />
+                        </NFormItem>
+                      </NForm>
+                    </ConsoleSectionBlock>
                     <div v-if="!isMobileView" class="table-shell table-shell--stable table-shell--log-stable table-shell--page-12">
                       <NDataTable
                         :columns="logColumns"
@@ -2675,26 +2689,32 @@ onBeforeUnmount(() => {
                         @update:page="logPagination.setPage"
                       />
                     </div>
-                  </NCard>
+                  </ConsolePanelCard>
 
-                  <NCard v-else-if="canViewOrderLogs" embedded title="订单记录" class="console-form-card">
-                    <NForm label-placement="top" class="console-field-grid cols-5 console-form-grid mb-4">
-                      <NFormItem label="订单号">
-                        <NInput v-model:value="orderLogFilters.orderNo" />
-                      </NFormItem>
-                      <NFormItem label="SteamID64">
-                        <NInput v-model:value="orderLogFilters.steamId64" />
-                      </NFormItem>
-                      <NFormItem label="Email">
-                        <NInput v-model:value="orderLogFilters.email" />
-                      </NFormItem>
-                      <NFormItem label="状态">
-                        <NSelect v-model:value="orderLogFilters.status" clearable :options="orderStatusOptions" />
-                      </NFormItem>
-                      <NFormItem label="商品类型">
-                        <NSelect v-model:value="orderLogFilters.productType" clearable :options="orderProductTypeOptions" />
-                      </NFormItem>
-                    </NForm>
+                  <ConsolePanelCard
+                    v-else-if="canViewOrderLogs"
+                    title="订单记录"
+                    description="按订单号、SteamID、邮箱、状态和商品类型统一检索支付订单。"
+                  >
+                    <ConsoleSectionBlock title="筛选条件">
+                      <NForm label-placement="top" class="console-field-grid cols-5 console-form-grid">
+                        <NFormItem label="订单号">
+                          <NInput v-model:value="orderLogFilters.orderNo" />
+                        </NFormItem>
+                        <NFormItem label="SteamID64">
+                          <NInput v-model:value="orderLogFilters.steamId64" />
+                        </NFormItem>
+                        <NFormItem label="Email">
+                          <NInput v-model:value="orderLogFilters.email" />
+                        </NFormItem>
+                        <NFormItem label="状态">
+                          <NSelect v-model:value="orderLogFilters.status" clearable :options="orderStatusOptions" />
+                        </NFormItem>
+                        <NFormItem label="商品类型">
+                          <NSelect v-model:value="orderLogFilters.productType" clearable :options="orderProductTypeOptions" />
+                        </NFormItem>
+                      </NForm>
+                    </ConsoleSectionBlock>
                     <div v-if="!isMobileView" class="table-shell table-shell--stable table-shell--log-stable table-shell--page-12">
                       <NDataTable
                         :columns="orderLogColumns"
@@ -2752,7 +2772,7 @@ onBeforeUnmount(() => {
                         @update:page="orderLogPagination.setPage"
                       />
                     </div>
-                  </NCard>
+                  </ConsolePanelCard>
                 </div>
               </Transition>
             </div>
@@ -2760,7 +2780,10 @@ onBeforeUnmount(() => {
 
           <NTabPane v-if="canManageMapChallenges" name="map-challenges" tab="魔怔数据">
             <div class="console-wrap">
-              <NCard embedded title="新增 / 更新记录" class="console-form-card">
+              <ConsolePanelCard
+                title="新增 / 更新记录"
+                description="统一维护魔怔数据记录，新增和更新使用同一张表单。"
+              >
                 <NForm label-placement="top" class="console-field-grid cols-4">
                   <NFormItem label="SteamID64">
                     <NInput v-model:value="mapChallengeForm.steamId64" />
@@ -2786,10 +2809,13 @@ onBeforeUnmount(() => {
                     </div>
                   </NFormItem>
                 </NForm>
-              </NCard>
+              </ConsolePanelCard>
 
-              <NCard embedded title="最近记录" class="console-form-card">
-                <div class="console-subsection mb-4">
+              <ConsolePanelCard
+                title="最近记录"
+                description="按玩家、地图、阶段和模式筛选最近写入的魔怔数据。"
+              >
+                <ConsoleSectionBlock title="筛选条件">
                   <NForm label-placement="top" class="console-field-grid cols-5 console-form-grid console-form-grid--balanced">
                     <NFormItem label="SteamID64">
                       <NInput v-model:value="mapChallengeFilters.steamId64" />
@@ -2809,7 +2835,7 @@ onBeforeUnmount(() => {
                       </div>
                     </NFormItem>
                   </NForm>
-                </div>
+                </ConsoleSectionBlock>
 
                 <div v-if="!isMobileView" class="table-shell table-shell--short-stable">
                   <NDataTable
@@ -2868,7 +2894,7 @@ onBeforeUnmount(() => {
                     @update:page="mapChallengePagination.setPage"
                   />
                 </div>
-              </NCard>
+              </ConsolePanelCard>
             </div>
           </NTabPane>
 
@@ -2883,7 +2909,11 @@ onBeforeUnmount(() => {
                     :active="activeTab === 'admins' && adminSubTab === 'access'"
                   />
 
-                  <NCard v-else-if="adminSubTab === 'whitelist' && canCreateWhitelist" embedded title="后台直接新增白名单" class="console-form-card">
+                  <ConsolePanelCard
+                    v-else-if="adminSubTab === 'whitelist' && canCreateWhitelist"
+                    title="后台直接新增白名单"
+                    description="为后台场景直接补录白名单账号，和其它新增面板保持同一标题层级。"
+                  >
                     <NForm label-placement="top" class="console-field-grid cols-3">
                       <NFormItem label="SteamID64">
                         <NInput v-model:value="manualWhitelistForm.steamId64" />
@@ -2898,9 +2928,13 @@ onBeforeUnmount(() => {
                     <NButton type="primary" block :loading="whitelistManualSubmitting" @click="createManualWhitelist">
                       新增白名单
                     </NButton>
-                  </NCard>
+                  </ConsolePanelCard>
 
-                  <NCard v-else-if="canMigrateWhitelist" embedded title="SteamID 数据迁移" class="console-form-card">
+                  <ConsolePanelCard
+                    v-else-if="canMigrateWhitelist"
+                    title="SteamID 数据迁移"
+                    description="按旧 SteamID 和新 SteamID 执行迁移，延续统一的迁移表单样式。"
+                  >
                     <NForm label-placement="top" class="console-field-grid cols-2">
                       <NFormItem label="旧 SteamID64">
                         <NInput v-model:value="whitelistMigrationForm.oldSteamId64" />
@@ -2912,7 +2946,7 @@ onBeforeUnmount(() => {
                     <NButton type="primary" block :loading="whitelistMigrationSubmitting" @click="migrateWhitelistSteamId">
                       执行迁移
                     </NButton>
-                  </NCard>
+                  </ConsolePanelCard>
                 </div>
               </Transition>
             </div>
@@ -2943,7 +2977,10 @@ onBeforeUnmount(() => {
 
           <NTabPane v-if="canManageProducts" name="products" tab="商品管理">
             <div class="console-wrap">
-              <NCard embedded title="新增支付商品" class="console-form-card">
+              <ConsolePanelCard
+                title="新增支付商品"
+                description="统一维护商品基础信息、价格、类型和上架状态。"
+              >
                 <NForm label-placement="top" class="console-field-grid cols-4">
                   <NFormItem label="商品编码">
                     <NInput v-model:value="productForm.code" placeholder="" />
@@ -2986,9 +3023,12 @@ onBeforeUnmount(() => {
                   </NFormItem>
                 </NForm>
                 <NButton type="primary" block :loading="productSubmitting" @click="createProduct">新增商品</NButton>
-              </NCard>
+              </ConsolePanelCard>
 
-              <NCard embedded title="商品列表" class="console-form-card">
+              <ConsolePanelCard
+                title="商品列表"
+                description="按统一卡片和列表节奏查看、编辑并切换商品上架状态。"
+              >
                 <div v-if="!isMobileView" class="table-shell table-shell--short-stable">
                   <NDataTable
                     :columns="productColumns"
@@ -3050,7 +3090,7 @@ onBeforeUnmount(() => {
                     @update:page="productPagination.setPage"
                   />
                 </div>
-              </NCard>
+              </ConsolePanelCard>
             </div>
           </NTabPane>
 

@@ -19,6 +19,9 @@ import { computed, h, ref, watch } from 'vue'
 
 import { http } from '../../lib/api'
 import { pushToast } from '../../lib/toast'
+import ConsoleMetricStrip from './ConsoleMetricStrip.vue'
+import ConsolePanelCard from './ConsolePanelCard.vue'
+import ConsoleSectionBlock from './ConsoleSectionBlock.vue'
 import type {
   DefaultMapMonitorConfig,
   DefaultMapMonitorRuntime,
@@ -444,7 +447,10 @@ watch(
 </script>
 
 <template>
-  <NCard embedded title="空服自动换图" class="console-form-card">
+  <ConsolePanelCard
+    title="空服自动换图"
+    description="统一管理空服换图巡检、批量策略和单服策略配置。"
+  >
     <template #header-extra>
       <div class="catalog-header-extra">
         <NButton secondary class="console-action-icon" title="刷新列表" @click="loadPanel">↻</NButton>
@@ -456,17 +462,9 @@ watch(
     </div>
 
     <template v-else>
-      <div class="catalog-stat-grid">
-        <article v-for="item in summaryCards" :key="item.label" class="catalog-stat-card">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
-        </article>
-      </div>
+      <ConsoleMetricStrip :items="summaryCards" />
 
-      <section class="console-subsection">
-        <div class="catalog-section-head">
-          <div class="catalog-section-head__title">全局巡检</div>
-        </div>
+      <ConsoleSectionBlock title="全局巡检">
 
         <NForm label-placement="top" class="console-field-grid cols-3">
           <NFormItem label="总开关">
@@ -487,17 +485,16 @@ watch(
           <span>上次巡检 {{ formatDateTime(runtime.lastCheckedAt) }}</span>
           <span v-if="runtime.lastError">最近错误 {{ runtime.lastError }}</span>
         </div>
-      </section>
+      </ConsoleSectionBlock>
 
-      <section class="console-subsection">
-        <div class="catalog-section-head">
-          <div class="catalog-section-head__title">批量修改</div>
+      <ConsoleSectionBlock title="批量修改">
+        <template #header-extra>
           <div class="catalog-selection-actions">
             <span class="catalog-selection-actions__label">已选 {{ selectedServerIds.length }} 台</span>
             <NButton secondary size="small" :disabled="!servers.length" @click="selectAllServers">全选</NButton>
             <NButton secondary size="small" :disabled="!selectedServerIds.length" @click="clearSelectedServers">清空</NButton>
           </div>
-        </div>
+        </template>
 
         <NForm label-placement="top" class="console-field-grid cols-4">
           <NFormItem label="选中服务器">
@@ -560,12 +557,9 @@ watch(
             <NButton type="primary" block :disabled="!canSubmitBatch" @click="saveBatchPolicy">批量保存</NButton>
           </NFormItem>
         </NForm>
-      </section>
+      </ConsoleSectionBlock>
 
-      <section class="console-subsection">
-        <div class="catalog-section-head">
-          <div class="catalog-section-head__title">单服配置</div>
-        </div>
+      <ConsoleSectionBlock title="单服配置">
 
         <div v-if="servers.length" class="table-shell">
           <NDataTable
@@ -583,12 +577,9 @@ watch(
             <div class="hero-note__title">暂无可配置服务器</div>
           </div>
         </div>
-      </section>
+      </ConsoleSectionBlock>
 
-      <section v-if="recentSwitchRows.length" class="console-subsection">
-        <div class="catalog-section-head">
-          <div class="catalog-section-head__title">最近切图</div>
-        </div>
+      <ConsoleSectionBlock v-if="recentSwitchRows.length" title="最近切图">
 
         <div class="catalog-monitor-switches">
           <article
@@ -601,7 +592,7 @@ watch(
             <span>{{ item.endpoint }} · {{ formatDateTime(item.switchedAt) }}</span>
           </article>
         </div>
-      </section>
+      </ConsoleSectionBlock>
     </template>
 
     <NModal v-model:show="policyModal.show" preset="card" title="编辑单服换图策略" class="max-w-[640px]">
@@ -653,7 +644,7 @@ watch(
         </NButton>
       </NSpace>
     </NModal>
-  </NCard>
+  </ConsolePanelCard>
 </template>
 
 <style scoped>
