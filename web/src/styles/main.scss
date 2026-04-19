@@ -35,6 +35,9 @@
   --app-button-neutral-border-active: rgba(236, 240, 246, 0.3);
   --app-button-neutral-text: #d2d8e2;
   --app-button-neutral-text-hover: #f4f8fb;
+  --app-button-disabled-bg: rgba(255, 255, 255, 0.014);
+  --app-button-disabled-border: rgba(236, 240, 246, 0.09);
+  --app-button-disabled-text: rgba(199, 204, 214, 0.42);
   --app-button-primary-rgb: 99, 226, 182;
   --app-button-primary-bg: rgba(99, 226, 182, 0.11);
   --app-button-primary-bg-hover: rgba(99, 226, 182, 0.17);
@@ -955,10 +958,13 @@ img {
   --n-text-color-hover: var(--app-button-text-hover) !important;
   --n-text-color-pressed: var(--app-button-text-hover) !important;
   --n-text-color-focus: var(--app-button-text-hover) !important;
+  --n-color-disabled: var(--app-button-disabled-bg) !important;
+  --n-text-color-disabled: var(--app-button-disabled-text) !important;
   --n-border: 1px solid var(--app-button-border) !important;
   --n-border-hover: 1px solid var(--app-button-border-hover) !important;
   --n-border-pressed: 1px solid var(--app-button-border-active) !important;
   --n-border-focus: 1px solid var(--app-button-border-hover) !important;
+  --n-border-disabled: 1px solid var(--app-button-disabled-border) !important;
   transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease !important;
 }
 
@@ -966,6 +972,13 @@ img {
   background: var(--app-button-bg) !important;
   border-color: var(--app-button-border) !important;
   color: var(--app-button-text) !important;
+  box-shadow: none !important;
+}
+
+.n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--disabled:not(.nav-button) {
+  background: var(--app-button-disabled-bg) !important;
+  border-color: var(--app-button-disabled-border) !important;
+  color: var(--app-button-disabled-text) !important;
   box-shadow: none !important;
 }
 
