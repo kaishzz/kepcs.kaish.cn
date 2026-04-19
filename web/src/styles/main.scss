@@ -27,9 +27,9 @@
   --app-brand-hover: #7fe7c4;
   --app-brand-pressed: #5acea7;
   --app-button-neutral-rgb: 236, 240, 246;
-  --app-button-neutral-bg: rgba(255, 255, 255, 0.03);
-  --app-button-neutral-bg-hover: rgba(255, 255, 255, 0.048);
-  --app-button-neutral-bg-active: rgba(255, 255, 255, 0.06);
+  --app-button-neutral-bg: rgba(255, 255, 255, 0.018);
+  --app-button-neutral-bg-hover: rgba(255, 255, 255, 0.028);
+  --app-button-neutral-bg-active: rgba(255, 255, 255, 0.038);
   --app-button-neutral-border: rgba(236, 240, 246, 0.14);
   --app-button-neutral-border-hover: rgba(236, 240, 246, 0.24);
   --app-button-neutral-border-active: rgba(236, 240, 246, 0.3);
@@ -938,7 +938,7 @@ img {
 }
 
 .n-button:not(.nav-button) {
-  --app-button-rgb: var(--app-button-neutral-rgb);
+  --app-button-glow-rgb: var(--app-button-neutral-rgb);
   --app-button-bg: var(--app-button-neutral-bg);
   --app-button-bg-hover: var(--app-button-neutral-bg-hover);
   --app-button-bg-active: var(--app-button-neutral-bg-active);
@@ -947,6 +947,18 @@ img {
   --app-button-border-active: var(--app-button-neutral-border-active);
   --app-button-text: var(--app-button-neutral-text);
   --app-button-text-hover: var(--app-button-neutral-text-hover);
+  --n-color: var(--app-button-bg) !important;
+  --n-color-hover: var(--app-button-bg-hover) !important;
+  --n-color-pressed: var(--app-button-bg-active) !important;
+  --n-color-focus: var(--app-button-bg-hover) !important;
+  --n-text-color: var(--app-button-text) !important;
+  --n-text-color-hover: var(--app-button-text-hover) !important;
+  --n-text-color-pressed: var(--app-button-text-hover) !important;
+  --n-text-color-focus: var(--app-button-text-hover) !important;
+  --n-border: 1px solid var(--app-button-border) !important;
+  --n-border-hover: 1px solid var(--app-button-border-hover) !important;
+  --n-border-pressed: 1px solid var(--app-button-border-active) !important;
+  --n-border-focus: 1px solid var(--app-button-border-hover) !important;
   transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease !important;
 }
 
@@ -954,66 +966,56 @@ img {
   background: var(--app-button-bg) !important;
   border-color: var(--app-button-border) !important;
   color: var(--app-button-text) !important;
-  box-shadow: inset 0 0 0 1px rgba(var(--app-button-rgb), 0.035);
+  box-shadow: none !important;
+}
+
+.n-button:not(.nav-button) :is(.n-button__content, .n-base-icon) {
+  color: inherit !important;
 }
 
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type):not(.nav-button):not(.n-button--disabled):hover {
   background: var(--app-button-bg-hover) !important;
   border-color: var(--app-button-border-hover) !important;
   color: var(--app-button-text-hover) !important;
-  box-shadow: inset 0 0 0 1px rgba(var(--app-button-rgb), 0.08);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-button-glow-rgb), 0.12) !important;
 }
 
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type):not(.nav-button):not(.n-button--disabled):active {
   background: var(--app-button-bg-active) !important;
   border-color: var(--app-button-border-active) !important;
   color: var(--app-button-text-hover) !important;
-  box-shadow: inset 0 0 0 1px rgba(var(--app-button-rgb), 0.1);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-button-glow-rgb), 0.16) !important;
 }
 
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--ghost:not(.nav-button) {
-  background: rgba(var(--app-button-rgb), 0.04) !important;
+  background: transparent !important;
+  --n-color: transparent !important;
+  --n-color-hover: var(--app-button-bg-hover) !important;
+  --n-color-pressed: var(--app-button-bg-active) !important;
+  --n-color-focus: var(--app-button-bg-hover) !important;
   box-shadow: none !important;
 }
 
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--ghost:not(.nav-button):not(.n-button--disabled):hover {
-  background: rgba(var(--app-button-rgb), 0.1) !important;
+  background: var(--app-button-bg-hover) !important;
 }
 
 .n-button.n-button--primary-type:not(.nav-button) {
-  --app-button-rgb: var(--app-button-primary-rgb);
-  --app-button-bg: var(--app-button-primary-bg);
-  --app-button-bg-hover: var(--app-button-primary-bg-hover);
-  --app-button-bg-active: var(--app-button-primary-bg-active);
-  --app-button-border: var(--app-button-primary-border);
+  --app-button-glow-rgb: var(--app-button-primary-rgb);
   --app-button-border-hover: var(--app-button-primary-border-hover);
   --app-button-border-active: var(--app-button-primary-border-active);
-  --app-button-text: var(--app-button-primary-text);
-  --app-button-text-hover: var(--app-button-primary-text-hover);
 }
 
 .n-button.n-button--warning-type:not(.nav-button) {
-  --app-button-rgb: var(--app-button-warning-rgb);
-  --app-button-bg: var(--app-button-warning-bg);
-  --app-button-bg-hover: var(--app-button-warning-bg-hover);
-  --app-button-bg-active: var(--app-button-warning-bg-active);
-  --app-button-border: var(--app-button-warning-border);
+  --app-button-glow-rgb: var(--app-button-warning-rgb);
   --app-button-border-hover: var(--app-button-warning-border-hover);
   --app-button-border-active: var(--app-button-warning-border-active);
-  --app-button-text: var(--app-button-warning-text);
-  --app-button-text-hover: var(--app-button-warning-text-hover);
 }
 
 .n-button.n-button--error-type:not(.nav-button) {
-  --app-button-rgb: var(--app-button-danger-rgb);
-  --app-button-bg: var(--app-button-danger-bg);
-  --app-button-bg-hover: var(--app-button-danger-bg-hover);
-  --app-button-bg-active: var(--app-button-danger-bg-active);
-  --app-button-border: var(--app-button-danger-border);
+  --app-button-glow-rgb: var(--app-button-danger-rgb);
   --app-button-border-hover: var(--app-button-danger-border-hover);
   --app-button-border-active: var(--app-button-danger-border-active);
-  --app-button-text: var(--app-button-danger-text);
-  --app-button-text-hover: var(--app-button-danger-text-hover);
 }
 
 .query-panel-card {
@@ -1420,9 +1422,9 @@ img {
   min-height: 38px !important;
   padding: 0 14px !important;
   border-radius: var(--app-radius-sm) !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  background: rgba(255, 255, 255, 0.018) !important;
-  color: var(--app-text-soft) !important;
+  border-color: var(--app-button-border) !important;
+  background: var(--app-button-bg) !important;
+  color: var(--app-button-text) !important;
   box-shadow: none !important;
   transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease !important;
 }
