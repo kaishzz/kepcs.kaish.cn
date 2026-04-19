@@ -91,8 +91,8 @@ const noticeLinkUrl = 'https://qun.qq.com/universal-share/share?ac=1&authKey=3%2
 const noticeLinkLabel = computed(() => '加入群聊')
 const contactLinkUrl = 'https://qm.qq.com/q/AU4YivVhkY'
 const contactLinkLabel = '联系开水'
-const sidebarPrimaryNavItems = computed(() => props.navItems.filter((item) => item.icon !== 'admin'))
-const sidebarBottomNavItems = computed(() => props.navItems.filter((item) => item.icon === 'admin'))
+const sidebarPrimaryNavItems = computed(() => props.navItems.filter((item) => !['admin', 'status'].includes(item.icon || '')))
+const sidebarBottomNavItems = computed(() => props.navItems.filter((item) => ['admin', 'status'].includes(item.icon || '')))
 
 const hasHeaderActions = computed(() =>
   slots['header-actions']?.().some((node) => node.type !== Comment) ?? false,
@@ -130,6 +130,7 @@ const sidebarIconMap: Record<string, Component> = {
   stats: ChartBar,
   player: UserAvatar,
   challenge: Badge,
+  status: BareMetalServer02,
   admin: Settings,
 }
 
@@ -145,7 +146,15 @@ function normalizeNavPath(path: string) {
   return String(path || '').split('#')[0].split('?')[0] || '/'
 }
 
+function isExternalNav(item: AppNavItem) {
+  return /^https?:\/\//i.test(String(item.to || '').trim())
+}
+
 function isNavActive(item: AppNavItem) {
+  if (isExternalNav(item)) {
+    return false
+  }
+
   const targetPath = normalizeNavPath(item.to)
   const currentPath = normalizeNavPath(route.path)
 
@@ -185,6 +194,11 @@ function openSteamLogin(nextTarget?: string) {
 async function handleNavClick(item: AppNavItem) {
   closeMobileSidebar()
 
+  if (isExternalNav(item)) {
+    window.location.href = item.to
+    return
+  }
+
   if (item.requiresAuth) {
     await ensureAuthLoaded()
 
@@ -204,6 +218,10 @@ async function handleNavClick(item: AppNavItem) {
 }
 
 function warmupNavRoute(item: AppNavItem) {
+  if (isExternalNav(item)) {
+    return
+  }
+
   void preloadRouteView(item.to)
 }
 

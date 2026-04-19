@@ -8,6 +8,7 @@ const navConfig = [
   { label: '数据统计', to: '/stats', icon: 'stats' },
   { label: '查询玩家', to: '/player', icon: 'player', requiresAuth: true },
   { label: '魔怔排行榜', to: '/challenge', icon: 'challenge' },
+  { label: '服务状态', to: 'https://status.kaish.cn/status', icon: 'status' },
   { label: '后台管理', to: CONSOLE_PAGE_PATH, icon: 'admin', requiresAuth: true },
 ] satisfies AppNavItem[]
 
