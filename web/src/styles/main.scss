@@ -1625,7 +1625,7 @@ img {
 .console-wrap .table-shell {
   padding-top: 0;
   border-top: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  border-bottom: 0;
 }
 
 .console-wrap .table-shell .n-data-table-th,
@@ -1658,6 +1658,12 @@ img {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.table-shell + .table-pagination {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
 }
 
 .table-pagination .n-pagination,
