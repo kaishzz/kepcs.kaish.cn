@@ -215,13 +215,13 @@ const nodeInstructionOptions = [
   { label: '同步容器列表', value: 'docker.list_servers' },
   { label: '强制清理全部容器', value: 'node.kill_all' },
   { label: '检查更新', value: 'node.check_update' },
-  { label: '验证更新', value: 'node.check_validate' },
-  { label: '更新并监控', value: 'node.check_update_monitor' },
+  { label: '验证游戏完整性', value: 'node.check_validate' },
+  { label: '更新并崩溃检查', value: 'node.check_update_monitor' },
   { label: '更新成功后启动', value: 'node.check_update_start' },
   { label: '读取当前版本', value: 'node.get_oldver' },
   { label: '读取最新版本', value: 'node.get_nowver' },
-  { label: '监控检查', value: 'node.monitor_check' },
-  { label: '监控成功后启动', value: 'node.monitor_start' },
+  { label: '崩溃检查', value: 'node.monitor_check' },
+  { label: '崩溃检查后启动', value: 'node.monitor_start' },
   { label: 'RCON 指令', value: 'node.rcon_command' },
 ]
 
@@ -503,13 +503,13 @@ function commandActionText(commandType: string) {
   if (commandType === 'node.kill_all') return '强制清理容器'
   if (commandType === 'node.rcon_command') return 'RCON 指令'
   if (commandType === 'node.check_update') return '检查更新'
-  if (commandType === 'node.check_validate') return '验证更新'
-  if (commandType === 'node.check_update_monitor') return '更新并监控'
+  if (commandType === 'node.check_validate') return '验证游戏完整性'
+  if (commandType === 'node.check_update_monitor') return '更新并崩溃检查'
   if (commandType === 'node.check_update_start') return '更新成功后启动'
   if (commandType === 'node.get_oldver') return '读取当前版本'
   if (commandType === 'node.get_nowver') return '读取最新版本'
-  if (commandType === 'node.monitor_check') return '监控检查'
-  if (commandType === 'node.monitor_start') return '监控成功后启动'
+  if (commandType === 'node.monitor_check') return '崩溃检查'
+  if (commandType === 'node.monitor_start') return '崩溃检查后启动'
   return commandType
 }
 
@@ -1722,8 +1722,8 @@ onBeforeUnmount(() => {
                     <NButton secondary @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
                     <NButton secondary @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
                     <NButton secondary @click="queueNodeInstruction('node.check_update')">检查更新</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.check_validate')">验证更新</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.check_update_monitor')">更新并监控</NButton>
+                    <NButton secondary @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
+                    <NButton secondary @click="queueNodeInstruction('node.check_update_monitor')">更新并崩溃检查</NButton>
                     <NButton secondary @click="queueNodeInstruction('node.check_update_start')">更新成功后启动</NButton>
                     <NButton type="error" ghost @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
                   </div>
@@ -1732,13 +1732,13 @@ onBeforeUnmount(() => {
                 <section class="agent-command-section">
                   <div class="agent-action-section__header">
                     <strong>版本与监控</strong>
-                    <span>读取版本号, 或单独执行监控检查与启动流程</span>
+                    <span>读取版本号, 或单独执行崩溃检查与启动流程</span>
                   </div>
                   <div class="agent-action-grid">
                     <NButton secondary @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
                     <NButton secondary @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.monitor_check')">监控检查</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.monitor_start')">监控成功后启动</NButton>
+                    <NButton secondary @click="queueNodeInstruction('node.monitor_check')">崩溃检查</NButton>
+                    <NButton secondary @click="queueNodeInstruction('node.monitor_start')">崩溃检查后启动</NButton>
                   </div>
                 </section>
               </div>
