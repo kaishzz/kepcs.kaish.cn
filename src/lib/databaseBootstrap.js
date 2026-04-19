@@ -289,6 +289,15 @@ async function ensureCdkTables(config) {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`SiteSetting\` (
+        \`key\` VARCHAR(191) NOT NULL,
+        \`value\` LONGTEXT NOT NULL,
+        \`updatedAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        PRIMARY KEY (\`key\`)
+      ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS \`ManagedNode\` (
         \`id\` VARCHAR(191) NOT NULL,
         \`code\` VARCHAR(64) NOT NULL,

@@ -1,6 +1,8 @@
 const crypto = require("node:crypto");
 const { cdkPrisma } = require("../lib/prisma");
+const { notifyScheduledCommandFinished } = require("./gotifyNotificationService");
 const { extractAgentApiKey, generateAgentApiKey, hashAgentApiKey } = require("../utils/agentAuth");
+const { extractNodePayloadMeta, stripNodePayloadMeta } = require("../utils/nodeCommandPayloadMeta");
 
 const MANAGED_NODE_STATUSES = {
   ONLINE: "ONLINE",
@@ -92,11 +94,13 @@ function serializeNodeCommand(row) {
     return null;
   }
 
+  const meta = extractNodePayloadMeta(row.payload);
+
   return {
     id: row.id,
     nodeId: row.nodeId,
     commandType: row.commandType,
-    payload: row.payload || {},
+    payload: stripNodePayloadMeta(row.payload),
     status: row.status,
     createdBySteamId: row.createdBySteamId,
     createdByRole: row.createdByRole || null,
@@ -106,6 +110,9 @@ function serializeNodeCommand(row) {
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
     result: row.result || null,
     errorMessage: row.errorMessage || null,
+    notificationChannelKeys: meta.notificationChannelKeys,
+    sourceScheduleId: meta.sourceScheduleId,
+    sourceScheduleName: meta.sourceScheduleName,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     node: row.node ? serializeManagedNode(row.node) : undefined,
@@ -372,6 +379,10 @@ async function finishNodeCommand(nodeId, commandId, payload) {
   if (!row || row.nodeId !== String(nodeId)) {
     throw new Error("Command not found");
   }
+
+  void notifyScheduledCommandFinished(row).catch((error) => {
+    console.error("Failed to send scheduled command finish notification:", error);
+  });
 
   return serializeNodeCommand(row);
 }

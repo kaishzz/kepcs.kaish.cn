@@ -1,5 +1,11 @@
 const { cdkPrisma } = require("../lib/prisma");
 const { createNodeCommand, serializeManagedNode } = require("./agentControlService");
+const { notifyScheduledCommandQueued } = require("./gotifyNotificationService");
+const {
+  attachNodePayloadMeta,
+  extractNodePayloadMeta,
+  stripNodePayloadMeta,
+} = require("../utils/nodeCommandPayloadMeta");
 
 let scheduleTimer = null;
 let runningTick = false;
@@ -21,12 +27,15 @@ function serializeNodeSchedule(row) {
     return null;
   }
 
+  const meta = extractNodePayloadMeta(row.payload);
+
   return {
     id: row.id,
     nodeId: row.nodeId,
     name: row.name,
     commandType: row.commandType,
-    payload: row.payload || {},
+    payload: stripNodePayloadMeta(row.payload),
+    notificationChannelKeys: meta.notificationChannelKeys,
     intervalMinutes: row.intervalMinutes,
     nextRunAt: row.nextRunAt ? row.nextRunAt.toISOString() : null,
     lastQueuedAt: row.lastQueuedAt ? row.lastQueuedAt.toISOString() : null,
@@ -76,7 +85,12 @@ async function createNodeSchedule(payload) {
       nodeId: String(payload.nodeId),
       name: String(payload.name || "").trim(),
       commandType: String(payload.commandType || "").trim(),
-      payload: sanitizeJsonValue(payload.payload, {}),
+      payload: attachNodePayloadMeta(
+        sanitizeJsonValue(payload.payload, {}),
+        {
+          notificationChannelKeys: payload.notificationChannelKeys,
+        },
+      ),
       intervalMinutes: Math.max(1, Number(payload.intervalMinutes) || 1),
       nextRunAt: new Date(payload.nextRunAt),
       isActive: Boolean(payload.isActive ?? true),
@@ -91,12 +105,36 @@ async function createNodeSchedule(payload) {
 }
 
 async function updateNodeSchedule(id, payload) {
+  const shouldUpdatePayload =
+    Object.prototype.hasOwnProperty.call(payload, "payload")
+    || Object.prototype.hasOwnProperty.call(payload, "notificationChannelKeys");
+
+  let nextPayload;
+
+  if (shouldUpdatePayload) {
+    const existing = await cdkPrisma.nodeCommandSchedule.findUnique({
+      where: { id: String(id) },
+      select: { payload: true },
+    });
+
+    const currentMeta = extractNodePayloadMeta(existing?.payload);
+    const basePayload = Object.prototype.hasOwnProperty.call(payload, "payload")
+      ? sanitizeJsonValue(payload.payload, {})
+      : stripNodePayloadMeta(existing?.payload);
+
+    nextPayload = attachNodePayloadMeta(basePayload, {
+      notificationChannelKeys: Object.prototype.hasOwnProperty.call(payload, "notificationChannelKeys")
+        ? payload.notificationChannelKeys
+        : currentMeta.notificationChannelKeys,
+    });
+  }
+
   const row = await cdkPrisma.nodeCommandSchedule.update({
     where: { id: String(id) },
     data: {
       name: Object.prototype.hasOwnProperty.call(payload, "name") ? String(payload.name || "").trim() : undefined,
       commandType: Object.prototype.hasOwnProperty.call(payload, "commandType") ? String(payload.commandType || "").trim() : undefined,
-      payload: Object.prototype.hasOwnProperty.call(payload, "payload") ? sanitizeJsonValue(payload.payload, {}) : undefined,
+      payload: shouldUpdatePayload ? nextPayload : undefined,
       intervalMinutes: Object.prototype.hasOwnProperty.call(payload, "intervalMinutes") ? Math.max(1, Number(payload.intervalMinutes) || 1) : undefined,
       nextRunAt: Object.prototype.hasOwnProperty.call(payload, "nextRunAt") ? new Date(payload.nextRunAt) : undefined,
       isActive: Object.prototype.hasOwnProperty.call(payload, "isActive") ? Boolean(payload.isActive) : undefined,
@@ -118,6 +156,7 @@ async function deleteNodeSchedule(id) {
 async function queueScheduleRun(scheduleRow) {
   const now = new Date();
   const nextRunAt = computeNextRunAt(scheduleRow.nextRunAt, scheduleRow.intervalMinutes, now);
+  const scheduleMeta = extractNodePayloadMeta(scheduleRow.payload);
 
   const updated = await cdkPrisma.nodeCommandSchedule.updateMany({
     where: {
@@ -138,7 +177,14 @@ async function queueScheduleRun(scheduleRow) {
   const command = await createNodeCommand({
     nodeId: scheduleRow.nodeId,
     commandType: scheduleRow.commandType,
-    payload: scheduleRow.payload || {},
+    payload: attachNodePayloadMeta(
+      stripNodePayloadMeta(scheduleRow.payload),
+      {
+        notificationChannelKeys: scheduleMeta.notificationChannelKeys,
+        sourceScheduleId: scheduleRow.id,
+        sourceScheduleName: scheduleRow.name,
+      },
+    ),
     expiresInSeconds: 900,
     createdBySteamId: scheduleRow.createdBySteamId,
     createdByRole: "scheduler",
@@ -151,6 +197,17 @@ async function queueScheduleRun(scheduleRow) {
       lastQueuedAt: now,
     },
   });
+
+  if (scheduleMeta.notificationChannelKeys.length) {
+    const schedule = serializeNodeSchedule({
+      ...scheduleRow,
+      lastQueuedAt: now,
+    });
+
+    void notifyScheduledCommandQueued(schedule, command).catch((error) => {
+      console.error("Failed to send scheduled queue notification:", error);
+    });
+  }
 
   return command;
 }
@@ -173,6 +230,9 @@ async function runDueNodeSchedules() {
       },
       orderBy: [{ nextRunAt: "asc" }, { createdAt: "asc" }],
       take: 20,
+      include: {
+        node: true,
+      },
     });
 
     for (const row of rows) {

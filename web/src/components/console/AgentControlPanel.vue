@@ -22,8 +22,11 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { http } from '../../lib/api'
 import { CONSOLE_API_BASE } from '../../lib/console'
 import { pushToast } from '../../lib/toast'
+import GotifyNotificationPanel from './GotifyNotificationPanel.vue'
 import ConsoleSegmentedTabs from './ConsoleSegmentedTabs.vue'
 import type {
+  GotifyChannelItem,
+  GotifyConfig,
   ManagedNodeHeartbeatServerItem,
   ManagedNodeItem,
   NodeCommandItem,
@@ -49,6 +52,11 @@ const props = withDefaults(defineProps<{
 
 type NodeFormMode = 'create' | 'edit'
 type CommandStatusFilter = 'ALL' | NodeCommandStatus
+interface CommandGroupResultRow extends Record<string, unknown> {
+  changed?: boolean
+  message?: string
+  server?: Partial<ManagedNodeHeartbeatServerItem> & Record<string, unknown>
+}
 type NodeActionType =
   | 'agent.ping'
   | 'docker.list_servers'
@@ -79,7 +87,7 @@ const commandStatusOptions = [
   { label: '已失败', value: 'FAILED' },
   { label: '已取消', value: 'CANCELLED' },
   { label: '已过期', value: 'EXPIRED' },
-] as const
+]
 
 const nodes = ref<ManagedNodeItem[]>([])
 const commands = ref<NodeCommandItem[]>([])
@@ -91,7 +99,7 @@ const loadingLogs = ref(false)
 const loadingSchedules = ref(false)
 const savingNode = ref(false)
 const savingSchedule = ref(false)
-const agentPanelTab = ref<'nodes' | 'control' | 'commands' | 'schedules' | 'logs'>('nodes')
+const agentPanelTab = ref<'nodes' | 'control' | 'commands' | 'schedules' | 'notifications' | 'logs'>('nodes')
 const selectedControlNodeId = ref('')
 const selectedCommandNodeId = ref('')
 const selectedScheduleNodeId = ref('')
@@ -109,6 +117,8 @@ const nodeCommandForm = ref({
   rconCommand: '',
 })
 
+const gotifyChannels = ref<GotifyChannelItem[]>([])
+
 const scheduleForm = ref({
   id: '',
   name: '',
@@ -117,6 +127,7 @@ const scheduleForm = ref({
   intervalMinutes: 60,
   nextRunAt: Date.now() + 60 * 60 * 1000,
   isActive: true,
+  notificationChannelKeys: [] as string[],
   rconGroup: 'ALL',
   rconCommand: '',
 })
@@ -183,6 +194,17 @@ const nodeInstructionGroupOptions = computed(() => [
   })),
 ])
 
+const gotifyChannelOptions = computed(() =>
+  gotifyChannels.value.map((channel) => ({
+    label: channel.enabled ? channel.name : `${channel.name} (已停用)`,
+    value: channel.key,
+  })),
+)
+
+const gotifyChannelNameMap = computed(() =>
+  new Map(gotifyChannels.value.map((channel) => [channel.key, channel.name])),
+)
+
 const nodeInstructionOptions = [
   { label: '检查节点连通', value: 'agent.ping' },
   { label: '同步容器列表', value: 'docker.list_servers' },
@@ -196,7 +218,7 @@ const nodeInstructionOptions = [
   { label: '监控检查', value: 'node.monitor_check' },
   { label: '监控成功后启动', value: 'node.monitor_start' },
   { label: 'RCON 指令', value: 'node.rcon_command' },
-] as const
+]
 
 const firstAvailableAgentTab = computed(() => {
   if (props.canViewNodes) return 'nodes'
@@ -212,6 +234,7 @@ const agentPanelTabOptions = computed(() =>
     props.canViewControl ? { label: '服务器操作', value: 'control' } : null,
     props.canViewCommands ? { label: '节点指令', value: 'commands' } : null,
     props.canViewSchedules ? { label: '定时任务', value: 'schedules' } : null,
+    props.canViewSchedules ? { label: '通知渠道', value: 'notifications' } : null,
     props.canViewLogs ? { label: '日志管理', value: 'logs' } : null,
   ].filter(Boolean) as Array<{ label: string, value: typeof agentPanelTab.value }>,
 )
@@ -552,7 +575,7 @@ function commandSummaryText(command: NodeCommandItem) {
 
   const server = normalizeResult(result.server)
   if (server) {
-    return `${String(server.key || '目标服务器')} 当前状态 ${serverStateText(server as ManagedNodeHeartbeatServerItem)}`
+    return `${String(server.key || '目标服务器')} 当前状态 ${serverStateText(server as unknown as ManagedNodeHeartbeatServerItem)}`
   }
 
   return previewValue(result, '执行完成')
@@ -560,20 +583,20 @@ function commandSummaryText(command: NodeCommandItem) {
 
 function resultServerList(command: NodeCommandItem) {
   const result = normalizeResult(command.result)
-  return Array.isArray(result?.servers) ? (result?.servers as ManagedNodeHeartbeatServerItem[]) : []
+  return Array.isArray(result?.servers) ? (result?.servers as unknown as ManagedNodeHeartbeatServerItem[]) : []
 }
 
 function resultGroupRows(command: NodeCommandItem) {
   const result = normalizeResult(command.result)
   return Array.isArray(result?.results)
-    ? (result?.results as Array<Record<string, unknown>>)
+    ? (result?.results as CommandGroupResultRow[])
     : []
 }
 
 function resultSingleServer(command: NodeCommandItem) {
   const result = normalizeResult(command.result)
   const server = normalizeResult(result?.server)
-  return server ? (server as ManagedNodeHeartbeatServerItem) : null
+  return server ? (server as unknown as ManagedNodeHeartbeatServerItem) : null
 }
 
 async function copyText(value: string | null | undefined, label: string) {
@@ -669,6 +692,22 @@ async function loadSchedules(silent = false) {
   } finally {
     if (!silent) {
       loadingSchedules.value = false
+    }
+  }
+}
+
+async function loadGotifyChannels(silent = false) {
+  if (!props.canViewSchedules) {
+    gotifyChannels.value = []
+    return
+  }
+
+  try {
+    const { data } = await http.get(`${CONSOLE_API_BASE}/agent/notifications/gotify`)
+    gotifyChannels.value = Array.isArray(data.config?.channels) ? data.config.channels : []
+  } catch (error) {
+    if (!silent) {
+      pushToast((error as Error).message, 'error')
     }
   }
 }
@@ -1061,6 +1100,12 @@ function toggleScheduleExpanded(scheduleId: string) {
     : [...scheduleExpandedIds.value, scheduleId]
 }
 
+function resolveGotifyChannelNames(channelKeys: string[] | undefined) {
+  return (Array.isArray(channelKeys) ? channelKeys : [])
+    .map((key) => gotifyChannelNameMap.value.get(String(key || '').trim()) || String(key || '').trim())
+    .filter(Boolean)
+}
+
 async function openLogModal(command: NodeCommandItem) {
   logModal.value = {
     show: true,
@@ -1090,6 +1135,7 @@ function resetScheduleForm() {
     intervalMinutes: 60,
     nextRunAt: Date.now() + 60 * 60 * 1000,
     isActive: true,
+    notificationChannelKeys: [],
     rconGroup: 'ALL',
     rconCommand: '',
   }
@@ -1104,6 +1150,7 @@ function fillScheduleForm(schedule: NodeCommandScheduleItem) {
     intervalMinutes: schedule.intervalMinutes,
     nextRunAt: schedule.nextRunAt ? new Date(schedule.nextRunAt).getTime() : Date.now() + 60 * 60 * 1000,
     isActive: schedule.isActive,
+    notificationChannelKeys: Array.isArray(schedule.notificationChannelKeys) ? [...schedule.notificationChannelKeys] : [],
     rconGroup: String(schedule.payload?.group || 'ALL'),
     rconCommand: String(schedule.payload?.command || ''),
   }
@@ -1134,6 +1181,7 @@ async function saveSchedule() {
       nodeId: scheduleForm.value.nodeId,
       commandType: scheduleForm.value.commandType,
       payload: buildSchedulePayload(),
+      notificationChannelKeys: scheduleForm.value.notificationChannelKeys,
       intervalMinutes: scheduleForm.value.intervalMinutes,
       nextRunAt: new Date(Number(scheduleForm.value.nextRunAt)).toISOString(),
       isActive: scheduleForm.value.isActive,
@@ -1187,6 +1235,10 @@ function confirmToggleSchedule(schedule: NodeCommandScheduleItem, nextValue: boo
   )
 }
 
+function handleGotifyConfigUpdated(config: GotifyConfig) {
+  gotifyChannels.value = Array.isArray(config.channels) ? config.channels : []
+}
+
 watch(
   () => props.active,
   (active) => {
@@ -1196,6 +1248,7 @@ watch(
     }
 
     void refreshAll()
+    void loadGotifyChannels(true)
     startPolling()
   },
   { immediate: true },
@@ -1280,6 +1333,7 @@ watch(
       || (current === 'control' && props.canViewControl)
       || (current === 'commands' && props.canViewCommands)
       || (current === 'schedules' && props.canViewSchedules)
+      || (current === 'notifications' && props.canViewSchedules)
       || (current === 'logs' && props.canViewLogs)
 
     if (!allowed) {
@@ -1667,6 +1721,16 @@ onBeforeUnmount(() => {
                 <NFormItem label="启用状态">
                   <NSwitch v-model:value="scheduleForm.isActive" />
                 </NFormItem>
+                <NFormItem label="通知渠道" class="col-span-full">
+                  <NSelect
+                    v-model:value="scheduleForm.notificationChannelKeys"
+                    multiple
+                    clearable
+                    filterable
+                    :options="gotifyChannelOptions"
+                    placeholder="不选择则不推送 Gotify"
+                  />
+                </NFormItem>
                 <NFormItem v-if="scheduleForm.commandType === 'node.rcon_command'" label="RCON 目标分组">
                   <NSelect v-model:value="scheduleForm.rconGroup" :options="nodeInstructionGroupOptions" />
                 </NFormItem>
@@ -1747,6 +1811,15 @@ onBeforeUnmount(() => {
                       </div>
                     </div>
 
+                    <div class="agent-command-card__summary">
+                      通知渠道:
+                      {{
+                        schedule.notificationChannelKeys?.length
+                          ? resolveGotifyChannelNames(schedule.notificationChannelKeys).join(' / ')
+                          : '不推送'
+                      }}
+                    </div>
+
                     <div v-if="Object.keys(schedule.payload || {}).length" class="agent-command-card__summary">
                       {{ JSON.stringify(schedule.payload || {}, null, 2) }}
                     </div>
@@ -1771,6 +1844,12 @@ onBeforeUnmount(() => {
             </section>
           </div>
         </NCard>
+
+        <GotifyNotificationPanel
+          v-else-if="agentPanelTab === 'notifications' && props.canViewSchedules"
+          :active="agentPanelTab === 'notifications'"
+          @updated="handleGotifyConfigUpdated"
+        />
 
         <NCard v-else-if="props.canViewLogs" embedded title="日志管理" class="console-form-card">
           <div class="agent-log-toolbar">

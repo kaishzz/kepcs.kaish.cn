@@ -86,6 +86,14 @@ const {
   listNodeSchedules,
   updateNodeSchedule,
 } = require("./services/nodeScheduleService");
+const {
+  getGotifyConfig,
+  normalizeGotifyChannelKey,
+  resolveGotifyChannels,
+  sendGotifyNotification,
+  serializeGotifyConfig,
+  updateGotifyConfig,
+} = require("./services/gotifyNotificationService");
 const { batchDeleteCdks, batchUpdateCdks, createCdks, deleteCdkAdmin, listAllCdks, listUserCdks, redeemCdk, transferCdk, updateCdkAdmin } = require("./services/cdkService");
 const { buildSteamLoginUrl, extractSteamIdFromClaimedId, verifySteamCallback } = require("./utils/steamOpenId");
 
@@ -592,6 +600,7 @@ const nodeScheduleCreateSchema = z.object({
   name: z.string().trim().min(1, "任务名称不能为空").max(64, "任务名称不能超过 64 个字符"),
   commandType: z.string().trim().min(1, "命令类型不能为空").max(64, "命令类型过长").regex(/^[a-z0-9._:-]+$/i, "命令类型格式不正确"),
   payload: jsonRecordSchema.optional().default({}),
+  notificationChannelKeys: z.array(z.string().trim().min(1).max(64)).max(16, "通知渠道不能超过 16 个").optional().default([]),
   intervalMinutes: z.coerce.number().int().min(1, "执行间隔至少 1 分钟").max(10080, "执行间隔不能超过 10080 分钟"),
   nextRunAt: z.string().trim().min(1, "下次执行时间不能为空"),
   isActive: z.coerce.boolean().optional().default(true),
@@ -601,9 +610,57 @@ const nodeScheduleUpdateSchema = z.object({
   name: z.string().trim().min(1, "任务名称不能为空").max(64, "任务名称不能超过 64 个字符").optional(),
   commandType: z.string().trim().min(1, "命令类型不能为空").max(64, "命令类型过长").regex(/^[a-z0-9._:-]+$/i, "命令类型格式不正确").optional(),
   payload: jsonRecordSchema.optional(),
+  notificationChannelKeys: z.array(z.string().trim().min(1).max(64)).max(16, "通知渠道不能超过 16 个").optional(),
   intervalMinutes: z.coerce.number().int().min(1, "执行间隔至少 1 分钟").max(10080, "执行间隔不能超过 10080 分钟").optional(),
   nextRunAt: z.string().trim().min(1, "下次执行时间不能为空").optional(),
   isActive: z.coerce.boolean().optional(),
+});
+
+const gotifyChannelSchema = z.object({
+  key: z.string().trim().max(64, "渠道标识不能超过 64 个字符").optional(),
+  name: z.string().trim().min(1, "渠道名称不能为空").max(64, "渠道名称不能超过 64 个字符"),
+  serverUrl: z.string().trim().min(1, "Gotify 地址不能为空").max(500, "Gotify 地址过长").url("Gotify 地址格式不正确"),
+  token: z.string().trim().min(1, "App Token 不能为空").max(512, "App Token 过长"),
+  description: z.string().trim().max(300, "渠道说明不能超过 300 个字符").optional(),
+  enabled: z.coerce.boolean().optional().default(true),
+  priority: z.coerce.number().int().min(0, "优先级不能小于 0").max(10, "优先级不能超过 10").optional().default(5),
+});
+
+const gotifyConfigUpdateSchema = z.object({
+  channels: z.array(gotifyChannelSchema).max(32, "通知渠道不能超过 32 个"),
+}).superRefine((value, ctx) => {
+  const seenKeys = new Set();
+
+  value.channels.forEach((channel, index) => {
+    const key = normalizeGotifyChannelKey(channel.key, channel.name || `channel-${index + 1}`);
+
+    if (!key) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "渠道标识不能为空",
+        path: ["channels", index, "key"],
+      });
+      return;
+    }
+
+    if (seenKeys.has(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "渠道标识不能重复",
+        path: ["channels", index, "key"],
+      });
+      return;
+    }
+
+    seenKeys.add(key);
+  });
+});
+
+const gotifyTestSchema = z.object({
+  channelKeys: z.array(z.string().trim().min(1).max(64)).min(1, "至少选择一个通知渠道").max(16, "通知渠道不能超过 16 个"),
+  title: z.string().trim().min(1, "通知标题不能为空").max(160, "通知标题不能超过 160 个字符").optional().default("KEPCS Gotify 测试通知"),
+  message: z.string().trim().min(1, "通知内容不能为空").max(4000, "通知内容不能超过 4000 个字符").optional().default("如果你收到了这条消息，说明当前渠道配置可用。"),
+  priority: z.coerce.number().int().min(0, "优先级不能小于 0").max(10, "优先级不能超过 10").optional(),
 });
 
 const kepcsServerCreateSchema = z.object({
@@ -2462,6 +2519,97 @@ async function createFastifyApp() {
     } catch (error) {
       if (error?.code === "P2025") {
         return sendNotFoundError(reply, "定时任务不存在");
+      }
+
+      throw error;
+    }
+  });
+
+  app.get("/console/api/agent/notifications/gotify", { preHandler: [requirePermission("console.agents.schedules"), queryRateLimit] }, async (_request, reply) => {
+    const config = await getGotifyConfig();
+    return reply.send({
+      success: true,
+      config: serializeGotifyConfig(config, { includeToken: true }),
+    });
+  });
+
+  app.patch("/console/api/agent/notifications/gotify", { preHandler: [requirePermission("console.agents.schedules"), adminWriteRateLimit] }, async (request, reply) => {
+    try {
+      const payload = gotifyConfigUpdateSchema.parse(request.body || {});
+      const user = getSessionUser(request);
+      const config = await updateGotifyConfig(payload);
+
+      await writeAuditLog({
+        actorSteamId: user.steamId,
+        actorRole: user.role,
+        action: "agent.notifications.gotify.update",
+        targetType: "agent-notification-gotify",
+        targetId: "gotify",
+        detail: {
+          channelCount: config.channels.length,
+          channels: config.channels.map((channel) => ({
+            key: channel.key,
+            name: channel.name,
+            serverUrl: channel.serverUrl,
+            enabled: channel.enabled,
+            priority: channel.priority,
+            hasToken: Boolean(channel.token),
+          })),
+        },
+      });
+
+      return reply.send({
+        success: true,
+        config: serializeGotifyConfig(config, { includeToken: true }),
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return sendValidationError(reply, error, "Gotify 渠道参数错误");
+      }
+
+      throw error;
+    }
+  });
+
+  app.post("/console/api/agent/notifications/gotify/test", { preHandler: [requirePermission("console.agents.schedules"), adminWriteRateLimit] }, async (request, reply) => {
+    try {
+      const payload = gotifyTestSchema.parse(request.body || {});
+      const user = getSessionUser(request);
+      const matchedChannels = await resolveGotifyChannels(payload.channelKeys, { includeDisabled: false });
+
+      if (!matchedChannels.length) {
+        return reply.code(400).send({ success: false, message: "未找到可用的通知渠道，请先检查配置或启用状态。" });
+      }
+
+      const result = await sendGotifyNotification({
+        channelKeys: payload.channelKeys,
+        title: payload.title,
+        message: payload.message,
+        priority: payload.priority,
+      });
+
+      await writeAuditLog({
+        actorSteamId: user.steamId,
+        actorRole: user.role,
+        action: "agent.notifications.gotify.test",
+        targetType: "agent-notification-gotify",
+        targetId: "gotify",
+        detail: {
+          channelKeys: payload.channelKeys,
+          delivered: result.delivered,
+          failed: result.failed,
+        },
+      });
+
+      if (result.delivered === 0 && result.failed > 0) {
+        const firstError = result.results.find((item) => !item.success)?.error || "测试通知发送失败";
+        return reply.code(502).send({ success: false, message: firstError, result });
+      }
+
+      return reply.send({ success: true, result });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return sendValidationError(reply, error, "Gotify 测试参数错误");
       }
 
       throw error;

@@ -417,6 +417,9 @@ export interface NodeCommandItem {
   expiresAt?: string | null
   result?: unknown
   errorMessage?: string | null
+  notificationChannelKeys?: string[]
+  sourceScheduleId?: string | null
+  sourceScheduleName?: string | null
   createdAt: string
   updatedAt: string
   node?: ManagedNodeItem
@@ -437,6 +440,7 @@ export interface NodeCommandScheduleItem {
   name: string
   commandType: string
   payload: Record<string, unknown>
+  notificationChannelKeys?: string[]
   intervalMinutes: number
   nextRunAt: string | null
   lastQueuedAt?: string | null
@@ -446,4 +450,18 @@ export interface NodeCommandScheduleItem {
   createdAt: string
   updatedAt: string
   node?: ManagedNodeItem
+}
+
+export interface GotifyChannelItem {
+  key: string
+  name: string
+  serverUrl: string
+  token?: string
+  description?: string
+  enabled: boolean
+  priority: number
+}
+
+export interface GotifyConfig {
+  channels: GotifyChannelItem[]
 }

@@ -369,7 +369,7 @@ const manageSubTabOptions = [
   { label: '新增 CDK', value: 'create' },
   { label: '给我自己生成', value: 'self' },
   { label: '批量管理', value: 'batch' },
-] as const
+]
 
 const logSubTabOptions = computed(() =>
   [
