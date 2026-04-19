@@ -28,6 +28,26 @@ $dirsToMirror = @(
   'web'
 )
 
+function Copy-DirectoryContents {
+  param(
+    [string]$SourcePath,
+    [string]$TargetPath,
+    [string[]]$ExcludeNames = @()
+  )
+
+  if (Test-Path -LiteralPath $TargetPath) {
+    Remove-Item -LiteralPath $TargetPath -Recurse -Force
+  }
+
+  New-Item -ItemType Directory -Path $TargetPath -Force | Out-Null
+
+  Get-ChildItem -LiteralPath $SourcePath -Force | Where-Object {
+    $_.Name -notin $ExcludeNames
+  } | ForEach-Object {
+    Copy-Item -LiteralPath $_.FullName -Destination $TargetPath -Recurse -Force
+  }
+}
+
 foreach ($relativePath in $filesToCopy) {
   $sourcePath = Join-Path $repoRoot $relativePath
   if (-not (Test-Path -LiteralPath $sourcePath)) {
@@ -50,6 +70,11 @@ foreach ($relativePath in $dirsToMirror) {
   }
 
   $targetPath = Join-Path $targetRoot $relativePath
+  if ($relativePath -eq 'web') {
+    Copy-DirectoryContents -SourcePath $sourcePath -TargetPath $targetPath -ExcludeNames @('node_modules', '.vscode')
+    continue
+  }
+
   if (Test-Path -LiteralPath $targetPath) {
     Remove-Item -LiteralPath $targetPath -Recurse -Force
   }
