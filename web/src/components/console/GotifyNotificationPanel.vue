@@ -174,7 +174,7 @@ watch(
       </div>
 
       <div v-else-if="form.channels.length" class="gotify-channel-list">
-        <section v-for="(channel, index) in form.channels" :key="`${channel.key || 'new'}-${index}`" class="gotify-channel-card">
+        <section v-for="(channel, index) in form.channels" :key="index" class="gotify-channel-card">
           <div class="gotify-channel-card__header">
             <div class="gotify-channel-card__title">
               <strong>{{ channel.name || `渠道 ${index + 1}` }}</strong>
