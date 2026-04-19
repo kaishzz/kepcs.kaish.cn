@@ -1598,9 +1598,9 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
                 <div class="agent-action-grid">
-                  <NButton secondary :disabled="selectedGroup === 'ALL'" @click="queueGroupAction('docker.start_group')">启动分组</NButton>
-                  <NButton secondary :disabled="selectedGroup === 'ALL'" @click="queueGroupAction('docker.stop_group')">强停分组</NButton>
-                  <NButton secondary :disabled="selectedGroup === 'ALL'" @click="queueGroupAction('docker.restart_group')">重启分组</NButton>
+                  <NButton secondary class="console-button-tone--success" :disabled="selectedGroup === 'ALL'" @click="queueGroupAction('docker.start_group')">启动分组</NButton>
+                  <NButton secondary class="console-button-tone--danger" :disabled="selectedGroup === 'ALL'" @click="queueGroupAction('docker.stop_group')">强停分组</NButton>
+                  <NButton secondary class="console-button-tone--warning" :disabled="selectedGroup === 'ALL'" @click="queueGroupAction('docker.restart_group')">重启分组</NButton>
                 </div>
               </section>
 
@@ -1616,10 +1616,10 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
                 <div class="agent-action-grid">
-                  <NButton secondary :disabled="!selectedServers.length" @click="queueServerAction('docker.start_server')">批量启动</NButton>
-                  <NButton secondary :disabled="!selectedServers.length" @click="queueServerAction('docker.stop_server')">批量强停</NButton>
-                  <NButton secondary :disabled="!selectedServers.length" @click="queueServerAction('docker.restart_server')">批量重启</NButton>
-                  <NButton type="error" ghost :disabled="!selectedServers.length" @click="queueServerAction('docker.remove_server')">批量删除</NButton>
+                  <NButton secondary class="console-button-tone--success" :disabled="!selectedServers.length" @click="queueServerAction('docker.start_server')">批量启动</NButton>
+                  <NButton secondary class="console-button-tone--danger" :disabled="!selectedServers.length" @click="queueServerAction('docker.stop_server')">批量强停</NButton>
+                  <NButton secondary class="console-button-tone--warning" :disabled="!selectedServers.length" @click="queueServerAction('docker.restart_server')">批量重启</NButton>
+                  <NButton type="error" ghost class="console-button-tone--danger" :disabled="!selectedServers.length" @click="queueServerAction('docker.remove_server')">批量删除</NButton>
                 </div>
               </section>
             </div>

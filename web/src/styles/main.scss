@@ -1031,6 +1031,27 @@ img {
   --app-button-border-active: var(--app-button-danger-border-active);
 }
 
+.n-button.console-button-tone--success:not(.nav-button) {
+  --app-button-glow-rgb: var(--app-button-primary-rgb);
+  --app-button-border: rgba(160, 239, 210, 0.22);
+  --app-button-border-hover: var(--app-button-primary-border-hover);
+  --app-button-border-active: var(--app-button-primary-border-active);
+}
+
+.n-button.console-button-tone--warning:not(.nav-button) {
+  --app-button-glow-rgb: var(--app-button-warning-rgb);
+  --app-button-border: rgba(246, 214, 152, 0.22);
+  --app-button-border-hover: var(--app-button-warning-border-hover);
+  --app-button-border-active: var(--app-button-warning-border-active);
+}
+
+.n-button.console-button-tone--danger:not(.nav-button) {
+  --app-button-glow-rgb: var(--app-button-danger-rgb);
+  --app-button-border: rgba(242, 164, 173, 0.22);
+  --app-button-border-hover: var(--app-button-danger-border-hover);
+  --app-button-border-active: var(--app-button-danger-border-active);
+}
+
 .query-panel-card {
   width: 100%;
   min-width: 0;
