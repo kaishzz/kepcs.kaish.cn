@@ -27,12 +27,12 @@
   --app-brand-hover: #7fe7c4;
   --app-brand-pressed: #5acea7;
   --app-button-neutral-rgb: 236, 240, 246;
-  --app-button-neutral-bg: rgba(255, 255, 255, 0.018);
-  --app-button-neutral-bg-hover: rgba(255, 255, 255, 0.028);
+  --app-button-neutral-bg: transparent;
+  --app-button-neutral-bg-hover: rgba(255, 255, 255, 0.026);
   --app-button-neutral-bg-active: rgba(255, 255, 255, 0.038);
-  --app-button-neutral-border: rgba(236, 240, 246, 0.14);
-  --app-button-neutral-border-hover: rgba(236, 240, 246, 0.24);
-  --app-button-neutral-border-active: rgba(236, 240, 246, 0.3);
+  --app-button-neutral-border: rgba(236, 240, 246, 0.18);
+  --app-button-neutral-border-hover: rgba(236, 240, 246, 0.3);
+  --app-button-neutral-border-active: rgba(236, 240, 246, 0.36);
   --app-button-neutral-text: #d2d8e2;
   --app-button-neutral-text-hover: #f4f8fb;
   --app-button-disabled-bg: rgba(255, 255, 255, 0.014);

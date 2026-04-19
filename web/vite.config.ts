@@ -3,6 +3,11 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import UnoCSS from 'unocss/vite'
 
+const NAIVE_DATA_CHUNK_RE = /data-table|pagination/
+const NAIVE_NAVIGATION_CHUNK_RE = /auto-complete|select|dropdown|tabs/
+const NAIVE_FORM_CHUNK_RE = /date-picker|form|input-number|input|switch/
+const NAIVE_FEEDBACK_CHUNK_RE = /dialog|modal|notification|message|loading-bar|spin/
+
 function isPackageChunk(id: string, name: string) {
   return id.includes(`/node_modules/${name}/`) || id.includes(`\\node_modules\\${name}\\`)
 }
@@ -12,19 +17,19 @@ function resolveNaiveChunk(id: string) {
     return null
   }
 
-  if (/(data-table|pagination)/.test(id)) {
+  if (NAIVE_DATA_CHUNK_RE.test(id)) {
     return 'naive-data'
   }
 
-  if (/(auto-complete|select|dropdown|tabs)/.test(id)) {
+  if (NAIVE_NAVIGATION_CHUNK_RE.test(id)) {
     return 'naive-navigation'
   }
 
-  if (/(date-picker|form|input-number|input|switch)/.test(id)) {
+  if (NAIVE_FORM_CHUNK_RE.test(id)) {
     return 'naive-form'
   }
 
-  if (/(dialog|modal|notification|message|loading-bar|spin)/.test(id)) {
+  if (NAIVE_FEEDBACK_CHUNK_RE.test(id)) {
     return 'naive-feedback'
   }
 

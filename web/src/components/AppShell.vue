@@ -195,7 +195,7 @@ async function handleNavClick(item: AppNavItem) {
   closeMobileSidebar()
 
   if (isExternalNav(item)) {
-    window.location.href = item.to
+    window.open(item.to, '_blank', 'noopener,noreferrer')
     return
   }
 

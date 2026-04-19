@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   NButton,
-  NCard,
   NForm,
   NFormItem,
   NInput,
