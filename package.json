@@ -8,6 +8,7 @@
     "dev:web": "npm --prefix web run dev",
     "web:install": "npm --prefix web install --include=dev --no-fund --no-audit",
     "build:web": "npm run web:install && npm --prefix web run build",
+    "sync:server-upload": "powershell -ExecutionPolicy Bypass -File scripts/sync-server-upload.ps1",
     "prepare:prod": "npm run prisma:generate && npm run build:web",
     "postinstall": "prisma generate",
     "start": "node src/server.js",
