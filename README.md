@@ -1,97 +1,88 @@
-# KepCs 开水服自助系统
+# KepCs 官网与控制台
 
-KepCs 是一个基于 `Fastify + Prisma + Vue 3` 的自助服务系统，覆盖商品购买、支付结果查询、订单查询、玩家查询、后台管理，以及与 `KepAgent` 配合使用的节点控制能力。
+KepCs 是开水服官网与后台控制台项目，提供前台展示、订单与白名单业务、玩家查询、CDK 管理、服务器目录维护，以及与 `KepAgent` 配合使用的节点控制能力。
 
-这个仓库适合公开托管源码。真实环境变量、支付私钥、部署镜像目录等敏感内容应保留在本地或服务器上，不应提交到 GitHub。
+项目采用前后端同仓结构：
 
-## 功能概览
+- 根目录 `src/` 为 Fastify 后端
+- 根目录 `web/` 为 Vue 3 管理台与官网前端
+- `prisma/` 维护 Prisma schema
+- `test/` 存放后端单元测试
 
-- 商品购买与支付结果页
-- 订单查询与玩家查询
-- 数据统计与后台管理
-- 白名单、CDK、服务器目录相关业务
-- Agent 节点注册、心跳、任务下发与日志回传
+## 核心能力
+
+- 官网服务器展示、支付下单、订单结果与订单查询
+- Steam 登录后的后台控制台
+- 白名单、CDK、商品、玩家查询与操作日志
+- 开水服与社区服目录维护
+- Agent 节点注册、心跳、命令下发、日志回传
+- 节点服务器批量启停、重启、删除与版本维护
+- 手动 RCON、定时任务、Gotify 通知渠道
 - 空服自动换图、空服定时重启
-- Agent 定时任务 Gotify 多渠道通知
 
 ## 技术栈
 
 - 后端：`Node.js`、`Fastify`、`Prisma`、`MySQL`、`Redis`
-- 前端：`Vue 3`、`Vite`、`Pinia`、`Vue Router`、`Naive UI`、`UnoCSS`、`SCSS`、`ECharts`
+- 前端：`Vue 3`、`Vite`、`TypeScript`、`Naive UI`、`UnoCSS`
 
 ## 目录结构
 
 ```text
 .
-|-- deploy/                Nginx / PM2 部署示例
-|-- prisma/                Prisma schema
-|-- public/                静态资源
-|-- src/                   后端源码
-|-- test/                  后端测试
-|-- web/                   前端源码
-|-- .env.example           环境变量模板
-|-- package.json
+|-- deploy/         部署示例
+|-- prisma/         Prisma schema
+|-- public/         后端静态资源
+|-- src/            Fastify 后端
+|-- test/           后端测试
+|-- web/            Vue 3 前端
+|-- .env.example    环境变量模板
 `-- README.md
 ```
-
-说明：
-
-- `keys/` 为本地支付密钥目录，应保留在本地并加入忽略。
-- `server_upload/` 为本地部署镜像目录，包含构建产物与敏感配置，不建议纳入公开仓库。
-- `dist/` 为前端构建输出，应由构建流程生成。
 
 ## 环境要求
 
 - `Node.js 20+`
 - `MySQL 8+`
-- `Redis 6+`（推荐）
+- `Redis 6+`
 
 ## 快速开始
 
-1. 安装依赖
+1. 安装根目录依赖
 
 ```bash
 npm install
 ```
 
-2. 复制环境变量模板并填写真实配置
+2. 安装前端依赖
+
+```bash
+npm run web:install
+```
+
+3. 复制环境变量模板
 
 ```bash
 cp .env.example .env
 ```
 
-3. 生成 Prisma Client
+4. 生成 Prisma Client
 
 ```bash
 npm run prisma:generate
 ```
 
-4. 初始化或同步数据库结构
+5. 初始化或同步数据库结构
 
 ```bash
 npm run prisma:push
 ```
 
-5. 启动开发环境
+6. 启动后端与前端开发环境
 
 ```bash
 npm run dev
 npm run dev:web
 ```
-
-## 环境变量
-
-完整变量清单见 [`.env.example`](./.env.example)。
-
-重点配置项：
-
-- `SESSION_SECRET`：必须替换为高强度随机值
-- `DATABASE_URL`：MySQL 连接串
-- `WHITELIST_API_KEY`、`SERVER_LIST_API_KEY`：上游接口密钥
-- `STEAM_WEB_API_KEY`：Steam Web API Key
-- `SMTP_*`：邮件发送配置
-- `ZHUPAY_*`：支付网关配置
-- `ZHUPAY_MERCHANT_PRIVATE_KEY_PATH`：本地商户私钥路径
 
 ## 常用脚本
 
@@ -105,53 +96,72 @@ npm run prisma:push
 npm test
 ```
 
-## Agent 控制能力
+前端单独检查：
 
-控制平面已内置 Agent 节点管理接口，可与独立部署的 `KepAgent` 配合使用，用于服务器控制、任务下发和日志采集。
+```bash
+npm --prefix web run type-check
+npm --prefix web run lint
+```
 
-主要能力：
+## 环境变量说明
 
-- 节点注册与密钥轮换
-- Agent 心跳与任务领取
-- 命令开始、结束、日志上传
-- 控制台查看节点与执行记录
-- 定时任务支持绑定多个 Gotify 通知渠道
-- 后台可维护多个 Gotify 地址与不同 App Token 分组
+完整字段见 [`.env.example`](./.env.example)。
 
-## Gotify 通知
+常用配置分组如下：
 
-服务器控制中的定时任务现已支持接入 `Gotify`，并且不是只绑一个固定 `App Token`。
+- 站点与登录：`SESSION_SECRET`、`ROOT_STEAM_IDS`
+- 数据库：`DATABASE_URL`
+- Redis：`REDIS_URL`
+- Steam：`STEAM_WEB_API_KEY`
+- 支付：`ZHUPAY_*`
+- 邮件：`SMTP_*`
+- 上游接口：`WHITELIST_API_KEY`、`SERVER_LIST_API_KEY`
+- 服务器目录数据库：`SERVER_CATALOG_DB_*`
 
-当前设计：
+敏感文件和本地部署目录不应提交：
 
-- 后台可维护多个 Gotify 渠道
-- 每个渠道可单独配置 `Gotify` 地址、`App Token`、默认优先级和启用状态
-- 定时任务可一次勾选多个通知渠道
-- 定时任务触发时会推送一条通知
-- 定时任务关联命令执行完成或失败时会再次推送结果通知
+- `.env`
+- `keys/`
+- `server_upload/`
+- 构建产物与日志文件
 
-后台入口：
+## Agent 控制台
 
-- `控制台 -> 服务器控制 -> 通知渠道`
-- `控制台 -> 服务器控制 -> 定时任务`
+控制台内置了一套与 `KepAgent` 协作的控制平面，主要包含：
 
-典型用法：
+- 节点注册与令牌轮换
+- Agent 心跳与服务器列表同步
+- 节点命令、日志和定时任务
+- Gotify 通知渠道
+- 手动 RCON 与批量服务器操作
 
-- `https://gotify.kaish.cn` 下为不同用途创建多个 App
-- 把不同 App 的 token 分别保存成不同渠道
-- 例如拆成 `更新通知`、`重启通知`、`失败告警`、`测试服分组`、`正式服分组`
-- 创建定时任务时按需要勾选对应渠道即可
+`KepAgent` 是独立部署在节点上的执行端项目，本仓库通过控制台 API 负责下发命令、记录日志和展示结果。
 
-配置保存位置：
+## RCON 说明
 
-- Gotify 渠道配置保存在 `SiteSetting` 表
-- 定时任务选择的渠道随任务一起保存，并在内部命令元数据中透传
+控制台中的手动 RCON 支持两种目标方式：
 
-## 部署说明
+- 按分组发送
+- 按单台或多台服务器发送
 
-- `deploy/ecosystem.config.cjs` 提供 `PM2` 启动示例
-- `deploy/nginx.kepcs.kaish.cn.conf` 提供 `Nginx` 反向代理示例
-- 生产启动前建议执行：
+RCON 密码来源于官网服务器目录数据库 `cs2_serverlist.servers` 中保存的 `rcon_pwd`。控制台在下发命令前会按目标服务器解析密码并传递给 `KepAgent`，前端展示与审计记录会自动脱敏，不会在页面中明文显示密码。
+
+`KepAgent` 仍保留自身全局 `rcon_password` 作为兼容性兜底，用于旧命令或未带密码覆盖的场景。
+
+## 定时任务与 Gotify
+
+定时任务支持绑定多个 Gotify 渠道，适合以下场景：
+
+- 定时检查更新
+- 定时读取版本
+- 更新完成后提醒
+- 失败告警推送
+
+Gotify 渠道配置保存在站点设置中，任务保存时只记录渠道标识，执行时按标识解析对应渠道。
+
+## 构建与部署
+
+生产部署前建议执行：
 
 ```bash
 npm install
@@ -165,8 +175,17 @@ npm start
 pm2 start deploy/ecosystem.config.cjs
 ```
 
-## 安全建议
+可参考：
 
-- 不要提交 `.env`、`keys/`、`server_upload/`、构建产物和日志文件
-- 如果历史上已经泄露过真实密钥或数据库连接串，公开仓库前请先轮换
-- 生产环境建议在反向代理层继续配置限流、连接数限制和缓存策略
+- `deploy/ecosystem.config.cjs`
+- `deploy/nginx.kepcs.kaish.cn.conf`
+
+## 验证建议
+
+开发或上线前建议至少执行：
+
+```bash
+npm test
+npm --prefix web run type-check
+npm --prefix web run build
+```

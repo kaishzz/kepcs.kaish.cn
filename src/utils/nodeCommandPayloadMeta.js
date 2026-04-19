@@ -53,6 +53,62 @@ function stripNodePayloadMeta(payload) {
   return safePayload;
 }
 
+function normalizeNodeCommandServerKeys(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => normalizeString(value, 64))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function sanitizeNodeCommandTargets(targets) {
+  return (Array.isArray(targets) ? targets : [])
+    .map((target) => {
+      if (!target || typeof target !== "object" || Array.isArray(target)) {
+        return null;
+      }
+
+      const key = normalizeString(target.key, 64);
+      if (!key) {
+        return null;
+      }
+
+      return { key };
+    })
+    .filter(Boolean);
+}
+
+function sanitizeNodeCommandPayload(payload) {
+  const safePayload = stripNodePayloadMeta(payload);
+
+  if (Array.isArray(safePayload.serverKeys)) {
+    safePayload.serverKeys = normalizeNodeCommandServerKeys(safePayload.serverKeys);
+  }
+
+  if (Array.isArray(safePayload.targets)) {
+    const sanitizedTargets = sanitizeNodeCommandTargets(safePayload.targets);
+
+    if (sanitizedTargets.length) {
+      safePayload.targets = sanitizedTargets;
+
+      if (!Array.isArray(safePayload.serverKeys) || !safePayload.serverKeys.length) {
+        safePayload.serverKeys = sanitizedTargets.map((target) => target.key);
+      }
+    } else {
+      delete safePayload.targets;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(safePayload, "rconPassword")) {
+    safePayload.hasRconPassword = Boolean(normalizeString(safePayload.rconPassword, 256));
+    delete safePayload.rconPassword;
+  }
+
+  return safePayload;
+}
+
 function attachNodePayloadMeta(payload, meta) {
   const cleanPayload = stripNodePayloadMeta(payload);
   const normalizedMeta = normalizeNodePayloadMeta(meta);
@@ -76,5 +132,7 @@ module.exports = {
   attachNodePayloadMeta,
   extractNodePayloadMeta,
   normalizeNotificationChannelKeys,
+  normalizeNodeCommandServerKeys,
+  sanitizeNodeCommandPayload,
   stripNodePayloadMeta,
 };

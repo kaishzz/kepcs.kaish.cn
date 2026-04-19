@@ -52,6 +52,7 @@ const props = withDefaults(defineProps<{
 
 type NodeFormMode = 'create' | 'edit'
 type CommandStatusFilter = 'ALL' | NodeCommandStatus
+type RconTargetMode = 'group' | 'servers'
 interface CommandGroupResultRow extends Record<string, unknown> {
   changed?: boolean
   message?: string
@@ -106,14 +107,16 @@ const selectedScheduleNodeId = ref('')
 const selectedGroup = ref('ALL')
 const selectedServerKeys = ref<string[]>([])
 const selectedCommandStatus = ref<CommandStatusFilter>('ALL')
-const commandLimit = ref(30)
+const commandLimit = ref(20)
 const commandPage = ref(1)
 const expandedCommandIds = ref<string[]>([])
 const scheduleExpandedIds = ref<string[]>([])
 const COMMANDS_PER_PAGE = 8
 
 const nodeCommandForm = ref({
+  rconTargetMode: 'group' as RconTargetMode,
   rconGroup: 'ALL',
+  rconServerKeys: [] as string[],
   rconCommand: '',
 })
 
@@ -269,6 +272,13 @@ const groupOptions = computed(() => [
     value: group,
   })),
 ])
+
+const rconServerOptions = computed(() =>
+  selectedNodeServers.value.map((server) => ({
+    label: `${server.key} · ${server.containerName || '未填写容器名'}`,
+    value: server.key,
+  })),
+)
 
 const filteredServers = computed(() => {
   if (selectedGroup.value === 'ALL') {
@@ -500,6 +510,7 @@ function commandTargetText(command: NodeCommandItem) {
   const group = String(payload.group || '').trim()
   const key = String(payload.key || '').trim()
   const rconCommand = String(payload.command || '').trim()
+  const serverKeys = normalizeServerKeyList(payload.serverKeys || payload.targets)
 
   if (command.commandType.includes('_group')) {
     return group ? `分组 ${group}` : '分组'
@@ -510,6 +521,12 @@ function commandTargetText(command: NodeCommandItem) {
   }
 
   if (command.commandType === 'node.rcon_command') {
+    if (serverKeys.length) {
+      return serverKeys.length === 1
+        ? `服务器 ${serverKeys[0]} · ${rconCommand || 'RCON'}`
+        : `${serverKeys.length} 台服务器 · ${rconCommand || 'RCON'}`
+    }
+
     return group && group !== 'ALL'
       ? `分组 ${group} · ${rconCommand || 'RCON'}`
       : (rconCommand ? `全部分组 · ${rconCommand}` : '全部分组')
@@ -597,6 +614,59 @@ function resultSingleServer(command: NodeCommandItem) {
   const result = normalizeResult(command.result)
   const server = normalizeResult(result?.server)
   return server ? (server as unknown as ManagedNodeHeartbeatServerItem) : null
+}
+
+function normalizeServerKeyList(value: unknown) {
+  const list = Array.isArray(value) ? value : []
+  const keys = list
+    .map((item) => {
+      if (typeof item === 'string') {
+        return item
+      }
+      if (item && typeof item === 'object') {
+        return String((item as Record<string, unknown>).key || '')
+      }
+      return ''
+    })
+    .map(item => item.trim())
+    .filter(Boolean)
+
+  return Array.from(new Set(keys))
+}
+
+function buildManualRconPayload() {
+  const command = nodeCommandForm.value.rconCommand.trim()
+  if (!command) {
+    throw new Error('请填写 RCON 指令')
+  }
+
+  if (nodeCommandForm.value.rconTargetMode === 'servers') {
+    const serverKeys = normalizeServerKeyList(nodeCommandForm.value.rconServerKeys)
+    if (!serverKeys.length) {
+      throw new Error('请至少选择一台服务器')
+    }
+
+    return {
+      command,
+      targetMode: 'servers' as const,
+      serverKeys,
+    }
+  }
+
+  return {
+    command,
+    targetMode: 'group' as const,
+    group: nodeCommandForm.value.rconGroup,
+  }
+}
+
+function queueManualRconCommand() {
+  try {
+    const payload = buildManualRconPayload()
+    queueNodeInstruction('node.rcon_command', payload)
+  } catch (error) {
+    pushToast((error as Error).message, 'error')
+  }
 }
 
 async function copyText(value: string | null | undefined, label: string) {
@@ -989,15 +1059,22 @@ function queueNodeInstruction(commandType: Exclude<NodeActionType, 'docker.start
   const lines = [`目标节点: ${node.name}`, `确认执行${actionText}`]
 
   if (commandType === 'node.rcon_command') {
-    const group = String(payload.group || 'ALL')
+    const group = String(payload.group || 'ALL').trim() || 'ALL'
     const commandText = String(payload.command || '').trim()
+    const serverKeys = normalizeServerKeyList(payload.serverKeys || payload.targets)
 
     if (!commandText) {
       pushToast('请填写 RCON 指令', 'error')
       return
     }
 
-    lines.push(group === 'ALL' ? '目标分组: 全部分组' : `目标分组: ${group}`)
+    if (serverKeys.length) {
+      lines.push(serverKeys.length === 1 ? `目标服务器: ${serverKeys[0]}` : `目标服务器: ${serverKeys.length} 台`)
+      lines.push(serverKeys.join(', '))
+    } else {
+      lines.push(group === 'ALL' ? '目标分组: 全部分组' : `目标分组: ${group}`)
+    }
+
     lines.push(commandText)
   }
 
@@ -1292,6 +1369,7 @@ watch(
   () => {
     selectedGroup.value = 'ALL'
     selectedServerKeys.value = []
+    nodeCommandForm.value.rconServerKeys = []
   },
 )
 
@@ -1300,6 +1378,15 @@ watch(
   () => {
     selectedServerKeys.value = selectedServerKeys.value.filter((key) =>
       filteredServers.value.some((server) => server.key === key),
+    )
+  },
+)
+
+watch(
+  () => selectedNodeServers.value,
+  () => {
+    nodeCommandForm.value.rconServerKeys = nodeCommandForm.value.rconServerKeys.filter((key) =>
+      selectedNodeServers.value.some((server) => server.key === key),
     )
   },
 )
@@ -1428,22 +1515,21 @@ onBeforeUnmount(() => {
               <span>版本 {{ node.agentVersion || '-' }}</span>
               <span>IP {{ node.lastIp || '-' }}</span>
               <span>主机名 {{ node.lastHeartbeat?.hostname || '-' }}</span>
+              <span v-if="node.note" class="agent-node-card__note-chip">{{ node.note }}</span>
             </div>
 
-            <div class="agent-node-card__actions" @click.stop>
-              <NButton secondary @click="openEditNodeModal(node)">编辑</NButton>
-              <NButton secondary @click="confirmRotateKey(node)">重置令牌</NButton>
-              <div class="agent-node-card__switch">
-                <span>{{ node.isActive ? '已启用' : '已停用' }}</span>
-                <NSwitch
-                  :value="node.isActive"
-                  @update:value="(value) => confirmToggleNode(node, value)"
-                />
+            <div class="agent-node-card__footer">
+              <div class="agent-node-card__actions" @click.stop>
+                <NButton secondary @click="openEditNodeModal(node)">编辑</NButton>
+                <NButton secondary @click="confirmRotateKey(node)">重置令牌</NButton>
+                <div class="agent-node-card__switch">
+                  <span>{{ node.isActive ? '已启用' : '已停用' }}</span>
+                  <NSwitch
+                    :value="node.isActive"
+                    @update:value="(value) => confirmToggleNode(node, value)"
+                  />
+                </div>
               </div>
-            </div>
-
-            <div v-if="node.note" class="agent-node-card__note">
-              {{ node.note }}
             </div>
           </article>
         </div>
@@ -1611,12 +1697,9 @@ onBeforeUnmount(() => {
                   <strong>节点选择</strong>
                   <span>节点指令不会要求你勾选单台服务器, 直接对当前节点执行</span>
                 </div>
-                <NForm label-placement="top" class="console-field-grid cols-3 agent-toolbar-grid">
+                <NForm label-placement="top" class="console-field-grid cols-2 agent-toolbar-grid">
                   <NFormItem label="节点">
                     <NSelect v-model:value="selectedControlNodeId" :options="controlNodeOptions" />
-                  </NFormItem>
-                  <NFormItem label="RCON 目标分组">
-                    <NSelect v-model:value="nodeCommandForm.rconGroup" :options="nodeInstructionGroupOptions" />
                   </NFormItem>
                   <NFormItem label="快速刷新">
                     <div class="console-inline-actions">
@@ -1660,25 +1743,45 @@ onBeforeUnmount(() => {
               <section class="agent-command-section">
                 <div class="agent-action-section__header">
                   <strong>RCON 指令</strong>
-                  <span>按分组下发 RCON, 全部分组会对节点内全部配置服务器执行</span>
+                  <span>支持按分组或按单台服务器下发, 密码从官网服务器目录读取并透传给 Agent</span>
                 </div>
-                <NForm label-placement="top" class="console-field-grid cols-2">
-                  <NFormItem label="目标分组">
+                <NForm label-placement="top" class="console-field-grid cols-3">
+                  <NFormItem label="目标类型">
+                    <NSelect
+                      v-model:value="nodeCommandForm.rconTargetMode"
+                      :options="[
+                        { label: '按分组', value: 'group' },
+                        { label: '按服务器', value: 'servers' },
+                      ]"
+                    />
+                  </NFormItem>
+                  <NFormItem v-if="nodeCommandForm.rconTargetMode === 'group'" label="目标分组">
                     <NSelect v-model:value="nodeCommandForm.rconGroup" :options="nodeInstructionGroupOptions" />
                   </NFormItem>
-                  <NFormItem label="RCON 指令">
+                  <NFormItem v-else label="目标服务器" class="col-span-full">
+                    <NSelect
+                      v-model:value="nodeCommandForm.rconServerKeys"
+                      multiple
+                      clearable
+                      filterable
+                      max-tag-count="responsive"
+                      :options="rconServerOptions"
+                      placeholder="选择一台或多台服务器"
+                    />
+                  </NFormItem>
+                  <NFormItem
+                    label="RCON 指令"
+                    :class="{ 'col-span-full': nodeCommandForm.rconTargetMode === 'servers' }"
+                  >
                     <NInput
                       v-model:value="nodeCommandForm.rconCommand"
                       placeholder="status"
-                      @keydown.enter.prevent="queueNodeInstruction('node.rcon_command', { group: nodeCommandForm.rconGroup, command: nodeCommandForm.rconCommand })"
+                      @keydown.enter.prevent="queueManualRconCommand()"
                     />
                   </NFormItem>
                 </NForm>
                 <div class="agent-action-grid">
-                  <NButton
-                    type="primary"
-                    @click="queueNodeInstruction('node.rcon_command', { group: nodeCommandForm.rconGroup, command: nodeCommandForm.rconCommand })"
-                  >
+                  <NButton type="primary" @click="queueManualRconCommand()">
                     发送 RCON
                   </NButton>
                 </div>
@@ -2202,6 +2305,10 @@ onBeforeUnmount(() => {
   gap: 18px;
 }
 
+:deep(.console-form-card .n-card__content > :first-child) {
+  margin-top: 6px;
+}
+
 .agent-summary-grid,
 .agent-overview-grid {
   display: grid;
@@ -2252,7 +2359,7 @@ onBeforeUnmount(() => {
 .agent-log-list,
 .agent-detail-stack {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .agent-command-sections,
@@ -2303,8 +2410,8 @@ onBeforeUnmount(() => {
 
 .agent-node-card {
   display: grid;
-  gap: 14px;
-  padding: 15px 16px;
+  gap: 12px;
+  padding: 14px 15px;
   cursor: pointer;
   transition: border-color 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
 }
@@ -2369,15 +2476,15 @@ onBeforeUnmount(() => {
 
 .agent-node-card__meta {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 2px;
+  gap: 10px;
+  margin-top: 0;
 }
 
 .agent-node-card__meta > div {
   display: grid;
   gap: 3px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.04);
@@ -2411,10 +2518,23 @@ onBeforeUnmount(() => {
 .agent-node-card__heartbeat {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-top: 2px;
-  padding-top: 14px;
+  gap: 8px 10px;
+  margin-top: 0;
+}
+
+.agent-node-card__footer {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.agent-node-card__note-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(99, 226, 182, 0.08);
+  border: 1px solid rgba(99, 226, 182, 0.14);
+  color: var(--app-text-soft);
 }
 
 .agent-node-card__actions,
@@ -2435,8 +2555,8 @@ onBeforeUnmount(() => {
 }
 
 .agent-node-card__actions {
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .agent-node-card__switch {
@@ -2446,14 +2566,6 @@ onBeforeUnmount(() => {
   gap: 10px;
   color: var(--app-text-soft);
   font-size: 13px;
-}
-
-.agent-node-card__note {
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  color: var(--app-text-soft);
-  font-size: 13px;
-  line-height: 1.7;
 }
 
 .agent-control-stack,
@@ -2508,12 +2620,12 @@ onBeforeUnmount(() => {
 .agent-server-list,
 .agent-detail-server-list {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .agent-server-row {
   width: 100%;
-  padding: 15px 16px;
+  padding: 12px 13px;
   border: 1px solid var(--app-border-soft);
   border-radius: var(--app-radius-md);
   background: var(--app-panel-bg-soft);
@@ -2531,13 +2643,13 @@ onBeforeUnmount(() => {
 .agent-server-row__main,
 .agent-detail-server-item__meta {
   display: grid;
-  gap: 9px;
+  gap: 7px;
 }
 
 .agent-server-row__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: 6px 12px;
 }
 
 .agent-server-row__side {
@@ -2573,6 +2685,7 @@ onBeforeUnmount(() => {
 .agent-command-card__trigger {
   width: 100%;
   align-items: flex-start;
+  padding: 12px 14px;
 }
 
 .agent-command-card__meta-head {
@@ -2589,7 +2702,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   line-height: 1.6;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
 
 .agent-command-card__actions {
@@ -2628,11 +2741,11 @@ onBeforeUnmount(() => {
 }
 
 .agent-log-item {
-  padding: 14px 16px;
+  padding: 12px 14px;
 }
 
 .agent-node-list {
-  gap: 10px;
+  gap: 12px;
 }
 
 .agent-command-section {
@@ -2674,6 +2787,11 @@ onBeforeUnmount(() => {
   .agent-control-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
+  }
+
+  .agent-server-list {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    align-items: stretch;
   }
 
   .agent-schedule-layout {
@@ -2734,6 +2852,10 @@ onBeforeUnmount(() => {
   .agent-selected-node-banner,
   .agent-log-toolbar {
     flex-direction: column;
+  }
+
+  .agent-node-card__actions {
+    align-items: stretch;
   }
 
   .agent-action-grid :deep(.n-button) {

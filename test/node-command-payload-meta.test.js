@@ -5,6 +5,7 @@ const {
   attachNodePayloadMeta,
   extractNodePayloadMeta,
   normalizeNotificationChannelKeys,
+  sanitizeNodeCommandPayload,
   stripNodePayloadMeta,
 } = require("../src/utils/nodeCommandPayloadMeta");
 
@@ -37,5 +38,24 @@ test("payload meta can be attached and stripped without polluting command payloa
     notificationChannelKeys: ["ops", "alerts"],
     sourceScheduleId: "schedule-1",
     sourceScheduleName: "每小时检查更新",
+  });
+});
+
+test("node command payload sanitization keeps target keys and removes rcon secrets", () => {
+  const payload = sanitizeNodeCommandPayload({
+    command: "status",
+    targetMode: "servers",
+    targets: [
+      { key: "xl1", password: "secret-1" },
+      { key: "xl2", password: "secret-2" },
+      { key: "", password: "ignored" },
+    ],
+  });
+
+  assert.deepEqual(payload, {
+    command: "status",
+    targetMode: "servers",
+    targets: [{ key: "xl1" }, { key: "xl2" }],
+    serverKeys: ["xl1", "xl2"],
   });
 });

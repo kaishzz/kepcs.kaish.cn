@@ -2,7 +2,10 @@ const crypto = require("node:crypto");
 const { cdkPrisma } = require("../lib/prisma");
 const { notifyScheduledCommandFinished } = require("./gotifyNotificationService");
 const { extractAgentApiKey, generateAgentApiKey, hashAgentApiKey } = require("../utils/agentAuth");
-const { extractNodePayloadMeta, stripNodePayloadMeta } = require("../utils/nodeCommandPayloadMeta");
+const {
+  extractNodePayloadMeta,
+  sanitizeNodeCommandPayload,
+} = require("../utils/nodeCommandPayloadMeta");
 
 const MANAGED_NODE_STATUSES = {
   ONLINE: "ONLINE",
@@ -100,7 +103,7 @@ function serializeNodeCommand(row) {
     id: row.id,
     nodeId: row.nodeId,
     commandType: row.commandType,
-    payload: stripNodePayloadMeta(row.payload),
+    payload: sanitizeNodeCommandPayload(row.payload),
     status: row.status,
     createdBySteamId: row.createdBySteamId,
     createdByRole: row.createdByRole || null,
@@ -117,6 +120,14 @@ function serializeNodeCommand(row) {
     updatedAt: row.updatedAt.toISOString(),
     node: row.node ? serializeManagedNode(row.node) : undefined,
   };
+}
+
+async function findManagedNodeById(id) {
+  const row = await cdkPrisma.managedNode.findUnique({
+    where: { id: String(id) },
+  });
+
+  return row ? serializeManagedNode(row) : null;
 }
 
 function serializeNodeCommandLog(row) {
@@ -492,6 +503,7 @@ module.exports = {
   createManagedNode,
   createNodeCommand,
   findManagedNodeByApiKeyFromHeaders,
+  findManagedNodeById,
   finishNodeCommand,
   listManagedNodes,
   listNodeCommandLogs,

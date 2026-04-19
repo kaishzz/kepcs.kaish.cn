@@ -70,6 +70,7 @@ const {
   createManagedNode,
   createNodeCommand,
   findManagedNodeByApiKeyFromHeaders,
+  findManagedNodeById,
   finishNodeCommand,
   listManagedNodes,
   listNodeCommandLogs,
@@ -96,6 +97,7 @@ const {
 } = require("./services/gotifyNotificationService");
 const { batchDeleteCdks, batchUpdateCdks, createCdks, deleteCdkAdmin, listAllCdks, listUserCdks, redeemCdk, transferCdk, updateCdkAdmin } = require("./services/cdkService");
 const { buildSteamLoginUrl, extractSteamIdFromClaimedId, verifySteamCallback } = require("./utils/steamOpenId");
+const { normalizeNodeCommandServerKeys, sanitizeNodeCommandPayload } = require("./utils/nodeCommandPayloadMeta");
 
 const publicDir = path.join(process.cwd(), "public");
 const webDistDir = path.join(process.cwd(), "dist", "web");
@@ -925,6 +927,123 @@ function sanitizeServerCatalogAuditDetail(payload = {}) {
   }
 
   return normalized;
+}
+
+function sanitizeAgentCommandAuditDetail(payload = {}) {
+  return sanitizeNodeCommandPayload(payload);
+}
+
+function normalizeRconTargetMode(value) {
+  return String(value || "").trim().toLowerCase() === "servers"
+    ? "servers"
+    : "group";
+}
+
+async function resolveNodeRconCommandPayload(nodeId, payload = {}) {
+  const node = await findManagedNodeById(nodeId);
+
+  if (!node) {
+    throw new Error("Node not found");
+  }
+
+  const command = String(payload.command || "").trim();
+  if (!command) {
+    throw new Error("请填写 RCON 指令");
+  }
+
+  const heartbeatServers = Array.isArray(node.lastHeartbeat?.servers)
+    ? node.lastHeartbeat.servers
+    : [];
+
+  if (!heartbeatServers.length) {
+    throw new Error("当前节点还没有同步服务器列表, 请先执行一次同步容器列表");
+  }
+
+  const heartbeatByKey = new Map(
+    heartbeatServers
+      .map((server) => [String(server?.key || "").trim(), server])
+      .filter(([key]) => key),
+  );
+
+  const targetMode = normalizeRconTargetMode(payload.targetMode);
+  const group = String(payload.group || "ALL").trim() || "ALL";
+
+  let targetServers = [];
+
+  if (targetMode === "servers") {
+    const serverKeys = normalizeNodeCommandServerKeys([
+      ...(Array.isArray(payload.serverKeys) ? payload.serverKeys : []),
+      ...(Array.isArray(payload.targets) ? payload.targets.map((target) => target?.key) : []),
+    ]);
+
+    if (!serverKeys.length) {
+      throw new Error("请至少选择一台服务器");
+    }
+
+    const missingKeys = serverKeys.filter((key) => !heartbeatByKey.has(key));
+    if (missingKeys.length) {
+      throw new Error(`以下服务器未出现在当前节点心跳中: ${missingKeys.join(", ")}`);
+    }
+
+    targetServers = serverKeys.map((key) => heartbeatByKey.get(key));
+  } else {
+    targetServers = group === "ALL"
+      ? heartbeatServers
+      : heartbeatServers.filter((server) => Array.isArray(server?.groups) && server.groups.includes(group));
+
+    if (!targetServers.length) {
+      throw new Error(group === "ALL"
+        ? "当前节点没有可执行 RCON 的服务器"
+        : `分组 ${group} 下没有可执行 RCON 的服务器`);
+    }
+  }
+
+  const targetServerKeys = normalizeNodeCommandServerKeys(targetServers.map((server) => server?.key));
+  const catalogServers = await listKepcsServers({ includeSecrets: true });
+  const catalogByShotId = new Map(
+    catalogServers
+      .map((server) => [String(server?.shotId || "").trim(), server])
+      .filter(([shotId]) => shotId),
+  );
+
+  const missingCatalogKeys = [];
+  const missingPasswordKeys = [];
+  const targets = [];
+
+  for (const serverKey of targetServerKeys) {
+    const catalogServer = catalogByShotId.get(serverKey);
+    if (!catalogServer) {
+      missingCatalogKeys.push(serverKey);
+      continue;
+    }
+
+    const password = String(catalogServer.rconPassword || "").trim();
+    if (!password) {
+      missingPasswordKeys.push(serverKey);
+      continue;
+    }
+
+    targets.push({
+      key: serverKey,
+      password,
+    });
+  }
+
+  if (missingCatalogKeys.length) {
+    throw new Error(`以下服务器未在官网服务器目录中找到: ${missingCatalogKeys.join(", ")}`);
+  }
+
+  if (missingPasswordKeys.length) {
+    throw new Error(`以下服务器未配置 RCON 密码: ${missingPasswordKeys.join(", ")}`);
+  }
+
+  return {
+    command,
+    targetMode,
+    ...(targetMode === "group" ? { group } : {}),
+    serverKeys: targetServerKeys,
+    targets,
+  };
 }
 
 function assertDefaultMapMonitorServerConfig(server) {
@@ -2634,10 +2753,13 @@ async function createFastifyApp() {
     try {
       const payload = managedNodeCommandCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);
+      const normalizedCommandPayload = payload.commandType === "node.rcon_command"
+        ? await resolveNodeRconCommandPayload(request.params.id, payload.payload)
+        : payload.payload;
       const command = await createNodeCommand({
         nodeId: request.params.id,
         commandType: payload.commandType,
-        payload: payload.payload,
+        payload: normalizedCommandPayload,
         expiresInSeconds: payload.expiresInSeconds,
         createdBySteamId: user.steamId,
         createdByRole: user.role,
@@ -2652,7 +2774,7 @@ async function createFastifyApp() {
         detail: {
           nodeId: request.params.id,
           commandType: payload.commandType,
-          payload: payload.payload,
+          payload: sanitizeAgentCommandAuditDetail(normalizedCommandPayload),
           expiresInSeconds: payload.expiresInSeconds || null,
         },
       });
@@ -2665,6 +2787,22 @@ async function createFastifyApp() {
 
       if (error?.message === "Node not found") {
         return sendNotFoundError(reply, "节点不存在");
+      }
+
+      if (
+        error?.message === "请填写 RCON 指令"
+        || error?.message === "请至少选择一台服务器"
+        || error?.message === "当前节点还没有同步服务器列表, 请先执行一次同步容器列表"
+        || String(error?.message || "").includes("以下服务器未出现在当前节点心跳中:")
+        || String(error?.message || "").includes("以下服务器未在官网服务器目录中找到:")
+        || String(error?.message || "").includes("以下服务器未配置 RCON 密码:")
+        || String(error?.message || "").includes("下没有可执行 RCON 的服务器")
+        || error?.message === "当前节点没有可执行 RCON 的服务器"
+      ) {
+        return reply.code(400).send({
+          success: false,
+          message: error.message,
+        });
       }
 
       throw error;
