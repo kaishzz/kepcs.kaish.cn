@@ -26,6 +26,42 @@
   --app-brand: #63e2b6;
   --app-brand-hover: #7fe7c4;
   --app-brand-pressed: #5acea7;
+  --app-button-neutral-rgb: 236, 240, 246;
+  --app-button-neutral-bg: rgba(255, 255, 255, 0.03);
+  --app-button-neutral-bg-hover: rgba(255, 255, 255, 0.048);
+  --app-button-neutral-bg-active: rgba(255, 255, 255, 0.06);
+  --app-button-neutral-border: rgba(236, 240, 246, 0.14);
+  --app-button-neutral-border-hover: rgba(236, 240, 246, 0.24);
+  --app-button-neutral-border-active: rgba(236, 240, 246, 0.3);
+  --app-button-neutral-text: #d2d8e2;
+  --app-button-neutral-text-hover: #f4f8fb;
+  --app-button-primary-rgb: 99, 226, 182;
+  --app-button-primary-bg: rgba(99, 226, 182, 0.11);
+  --app-button-primary-bg-hover: rgba(99, 226, 182, 0.17);
+  --app-button-primary-bg-active: rgba(90, 206, 167, 0.2);
+  --app-button-primary-border: rgba(99, 226, 182, 0.34);
+  --app-button-primary-border-hover: rgba(127, 231, 196, 0.48);
+  --app-button-primary-border-active: rgba(127, 231, 196, 0.56);
+  --app-button-primary-text: #dcfbef;
+  --app-button-primary-text-hover: #effff8;
+  --app-button-warning-rgb: 233, 188, 106;
+  --app-button-warning-bg: rgba(233, 188, 106, 0.11);
+  --app-button-warning-bg-hover: rgba(233, 188, 106, 0.17);
+  --app-button-warning-bg-active: rgba(220, 174, 90, 0.2);
+  --app-button-warning-border: rgba(233, 188, 106, 0.34);
+  --app-button-warning-border-hover: rgba(244, 205, 131, 0.48);
+  --app-button-warning-border-active: rgba(244, 205, 131, 0.56);
+  --app-button-warning-text: #ffe7b6;
+  --app-button-warning-text-hover: #fff2d8;
+  --app-button-danger-rgb: 231, 118, 128;
+  --app-button-danger-bg: rgba(231, 118, 128, 0.11);
+  --app-button-danger-bg-hover: rgba(231, 118, 128, 0.17);
+  --app-button-danger-bg-active: rgba(215, 101, 112, 0.2);
+  --app-button-danger-border: rgba(231, 118, 128, 0.34);
+  --app-button-danger-border-hover: rgba(242, 147, 156, 0.48);
+  --app-button-danger-border-active: rgba(242, 147, 156, 0.56);
+  --app-button-danger-text: #ffc1c8;
+  --app-button-danger-text-hover: #ffd9de;
   --app-console-active-border: rgba(99, 226, 182, 0.34);
   --app-console-active-bg: rgba(99, 226, 182, 0.085);
   --app-console-hover-border: rgba(255, 255, 255, 0.14);
@@ -901,39 +937,83 @@ img {
   color: #f4f8fb;
 }
 
-.n-button.n-button--primary-type {
-  background: rgba(56, 63, 74, 0.96) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  color: #f4f8fb !important;
+.n-button:not(.nav-button) {
+  --app-button-rgb: var(--app-button-neutral-rgb);
+  --app-button-bg: var(--app-button-neutral-bg);
+  --app-button-bg-hover: var(--app-button-neutral-bg-hover);
+  --app-button-bg-active: var(--app-button-neutral-bg-active);
+  --app-button-border: var(--app-button-neutral-border);
+  --app-button-border-hover: var(--app-button-neutral-border-hover);
+  --app-button-border-active: var(--app-button-neutral-border-active);
+  --app-button-text: var(--app-button-neutral-text);
+  --app-button-text-hover: var(--app-button-neutral-text-hover);
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease !important;
 }
 
-.n-button.n-button--primary-type:hover {
-  background: rgba(56, 63, 74, 0.96) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+.n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type):not(.nav-button) {
+  background: var(--app-button-bg) !important;
+  border-color: var(--app-button-border) !important;
+  color: var(--app-button-text) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--app-button-rgb), 0.035);
 }
 
-.n-button.n-button--primary-type:active {
-  background: rgba(48, 54, 63, 0.96) !important;
-  border-color: rgba(255, 255, 255, 0.22) !important;
+.n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type):not(.nav-button):not(.n-button--disabled):hover {
+  background: var(--app-button-bg-hover) !important;
+  border-color: var(--app-button-border-hover) !important;
+  color: var(--app-button-text-hover) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--app-button-rgb), 0.08);
 }
 
-.n-button.n-button--secondary-type:not(.nav-button) {
-  background: rgba(255, 255, 255, 0.03) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  color: var(--app-text-soft) !important;
+.n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type):not(.nav-button):not(.n-button--disabled):active {
+  background: var(--app-button-bg-active) !important;
+  border-color: var(--app-button-border-active) !important;
+  color: var(--app-button-text-hover) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--app-button-rgb), 0.1);
 }
 
-.n-button.n-button--secondary-type:not(.nav-button):hover {
-  background: rgba(255, 255, 255, 0.045) !important;
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  color: var(--app-text) !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+.n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--ghost:not(.nav-button) {
+  background: rgba(var(--app-button-rgb), 0.04) !important;
+  box-shadow: none !important;
 }
 
-.n-button.n-button--secondary-type:not(.nav-button):active {
-  background: rgba(255, 255, 255, 0.04) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
+.n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--ghost:not(.nav-button):not(.n-button--disabled):hover {
+  background: rgba(var(--app-button-rgb), 0.1) !important;
+}
+
+.n-button.n-button--primary-type:not(.nav-button) {
+  --app-button-rgb: var(--app-button-primary-rgb);
+  --app-button-bg: var(--app-button-primary-bg);
+  --app-button-bg-hover: var(--app-button-primary-bg-hover);
+  --app-button-bg-active: var(--app-button-primary-bg-active);
+  --app-button-border: var(--app-button-primary-border);
+  --app-button-border-hover: var(--app-button-primary-border-hover);
+  --app-button-border-active: var(--app-button-primary-border-active);
+  --app-button-text: var(--app-button-primary-text);
+  --app-button-text-hover: var(--app-button-primary-text-hover);
+}
+
+.n-button.n-button--warning-type:not(.nav-button) {
+  --app-button-rgb: var(--app-button-warning-rgb);
+  --app-button-bg: var(--app-button-warning-bg);
+  --app-button-bg-hover: var(--app-button-warning-bg-hover);
+  --app-button-bg-active: var(--app-button-warning-bg-active);
+  --app-button-border: var(--app-button-warning-border);
+  --app-button-border-hover: var(--app-button-warning-border-hover);
+  --app-button-border-active: var(--app-button-warning-border-active);
+  --app-button-text: var(--app-button-warning-text);
+  --app-button-text-hover: var(--app-button-warning-text-hover);
+}
+
+.n-button.n-button--error-type:not(.nav-button) {
+  --app-button-rgb: var(--app-button-danger-rgb);
+  --app-button-bg: var(--app-button-danger-bg);
+  --app-button-bg-hover: var(--app-button-danger-bg-hover);
+  --app-button-bg-active: var(--app-button-danger-bg-active);
+  --app-button-border: var(--app-button-danger-border);
+  --app-button-border-hover: var(--app-button-danger-border-hover);
+  --app-button-border-active: var(--app-button-danger-border-active);
+  --app-button-text: var(--app-button-danger-text);
+  --app-button-text-hover: var(--app-button-danger-text-hover);
 }
 
 .query-panel-card {
@@ -1195,18 +1275,10 @@ img {
 }
 
 .console-form-card .n-card__content {
-  padding-top: var(--app-console-content-gap);
+  padding-top: 0;
 }
 
-.console-form-card .n-card__content > :first-child {
-  margin-top: 4px;
-}
-
-.console-form-card .n-card__content > :is(.console-section-block, .console-subsection):first-child {
-  padding-top: 2px;
-}
-
-:is(.console-chart-card, .console-tabs-card, .console-form-card) .n-card__content > * + * {
+:is(.console-chart-card, .console-tabs-card) .n-card__content > * + * {
   margin-top: var(--app-console-block-gap);
 }
 
@@ -1357,28 +1429,6 @@ img {
 
 .console-wrap .n-button .n-button__content {
   line-height: 1;
-}
-
-.console-wrap .n-button:not(.n-button--disabled):hover {
-  border-color: rgba(99, 226, 182, 0.26) !important;
-  background: rgba(255, 255, 255, 0.032) !important;
-  color: var(--app-text) !important;
-  box-shadow: inset 0 0 0 1px rgba(99, 226, 182, 0.04) !important;
-}
-
-.console-wrap .n-button.n-button--primary-type {
-  background: rgba(74, 82, 95, 0.52) !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  color: #f6f8fc !important;
-}
-
-.console-wrap .n-button.n-button--primary-type:not(.n-button--disabled):hover {
-  border-color: rgba(99, 226, 182, 0.26) !important;
-  background: rgba(84, 93, 107, 0.64) !important;
-}
-
-.console-wrap .n-button.n-button--error-type:not(.n-button--disabled):hover {
-  border-color: rgba(255, 120, 120, 0.24) !important;
 }
 
 .console-wrap .n-form-item-feedback-wrapper {
@@ -2331,7 +2381,7 @@ img {
   }
 
   .console-form-card .n-card__content {
-    padding-top: var(--app-console-content-gap);
+    padding-top: 0;
   }
 
   .console-subsection__header {

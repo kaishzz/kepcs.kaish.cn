@@ -370,7 +370,7 @@ watch(
           <template #header-extra>
             <div class="access-card-banner__actions">
               <NTag round>{{ groups.length }} 组</NTag>
-              <NButton secondary @click="openCreateGroup">新增权限组</NButton>
+              <NButton type="primary" @click="openCreateGroup">新增权限组</NButton>
             </div>
           </template>
 
@@ -410,7 +410,7 @@ watch(
                 </div>
 
                 <div class="access-entry-card__actions">
-                  <NButton secondary @click="openEditGroup(group)">编辑</NButton>
+                  <NButton type="warning" @click="openEditGroup(group)">编辑</NButton>
                   <NButton v-if="!group.isSystem" type="error" ghost @click="confirmDeleteGroup(group)">删除</NButton>
                 </div>
               </article>
@@ -433,7 +433,7 @@ watch(
           <template #header-extra>
             <div class="access-card-banner__actions">
               <NTag round>{{ directUsers.length }} 人</NTag>
-              <NButton secondary @click="openCreateDirectUser">新增直授</NButton>
+              <NButton type="primary" @click="openCreateDirectUser">新增直授</NButton>
             </div>
           </template>
 
@@ -469,7 +469,7 @@ watch(
                 </div>
 
                 <div class="access-entry-card__actions">
-                  <NButton secondary @click="openEditDirectUser(user)">编辑</NButton>
+                  <NButton type="warning" @click="openEditDirectUser(user)">编辑</NButton>
                   <NButton type="error" ghost @click="confirmDeleteDirectUser(user)">删除</NButton>
                 </div>
               </article>
@@ -515,7 +515,7 @@ watch(
             </div>
             <div class="access-modal-section__actions">
               <NTag round>成员 {{ groupModal.members.filter((item) => item.steamId.trim()).length }}</NTag>
-              <NButton secondary @click="addGroupMemberRow">新增成员</NButton>
+              <NButton type="primary" @click="addGroupMemberRow">新增成员</NButton>
             </div>
           </div>
 
@@ -523,7 +523,7 @@ watch(
             <div v-for="(member, index) in groupModal.members" :key="`member-${index}`" class="member-editor-row">
               <NInput v-model:value="member.steamId" placeholder="SteamID64" />
               <NInput v-model:value="member.note" placeholder="备注" />
-              <NButton secondary @click="removeGroupMemberRow(index)">移除</NButton>
+              <NButton type="error" ghost @click="removeGroupMemberRow(index)">移除</NButton>
             </div>
           </div>
         </section>

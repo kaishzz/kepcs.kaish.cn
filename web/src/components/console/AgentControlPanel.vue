@@ -1517,8 +1517,8 @@ onBeforeUnmount(() => {
 
             <div class="agent-node-card__footer">
               <div class="agent-node-card__actions" @click.stop>
-                <NButton secondary @click="openEditNodeModal(node)">编辑</NButton>
-                <NButton secondary @click="confirmRotateKey(node)">重置令牌</NButton>
+                <NButton type="warning" @click="openEditNodeModal(node)">编辑</NButton>
+                <NButton type="warning" @click="confirmRotateKey(node)">重置令牌</NButton>
                 <div class="agent-node-card__switch">
                   <span>{{ node.isActive ? '已启用' : '已停用' }}</span>
                   <NSwitch
@@ -1862,7 +1862,7 @@ onBeforeUnmount(() => {
                 </NFormItem>
                 <NFormItem label="操作">
                   <div class="console-inline-control">
-                    <NButton secondary @click="resetScheduleForm">新建任务</NButton>
+                    <NButton type="primary" @click="resetScheduleForm">新建任务</NButton>
                   </div>
                 </NFormItem>
               </NForm>
@@ -1925,7 +1925,7 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div class="agent-command-card__actions">
-                      <NButton secondary @click="fillScheduleForm(schedule)">载入编辑</NButton>
+                      <NButton type="warning" @click="fillScheduleForm(schedule)">载入编辑</NButton>
                       <NButton secondary @click="confirmToggleSchedule(schedule, !schedule.isActive)">
                         {{ schedule.isActive ? '停用' : '启用' }}
                       </NButton>
@@ -2300,10 +2300,6 @@ onBeforeUnmount(() => {
 .agent-panel-stack {
   display: grid;
   gap: 18px;
-}
-
-:deep(.console-form-card .n-card__content > :first-child) {
-  margin-top: 0;
 }
 
 .agent-summary-grid,

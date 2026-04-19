@@ -624,7 +624,7 @@ const kepcsColumns = computed<DataTableColumns<KepcsCatalogServerItem>>(() => [
         default: () => [
           h(
             NButton,
-            { secondary: true, size: 'small', onClick: () => openKepcsEditor(row) },
+            { type: 'warning', size: 'small', onClick: () => openKepcsEditor(row) },
             { default: () => '编辑' },
           ),
           h(
@@ -665,7 +665,7 @@ const communityColumns = computed<DataTableColumns<CommunityCatalogServerItem>>(
         default: () => [
           h(
             NButton,
-            { secondary: true, size: 'small', onClick: () => openCommunityEditor(row) },
+            { type: 'warning', size: 'small', onClick: () => openCommunityEditor(row) },
             { default: () => '编辑' },
           ),
           h(
@@ -861,7 +861,7 @@ watch(
 
                   <div class="catalog-mobile-card__actions">
                     <NButton
-                      secondary
+                      type="warning"
                       block
                       @click="activeTab === 'kepcs'
                         ? openKepcsEditor(row as KepcsCatalogServerItem)

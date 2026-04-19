@@ -1818,7 +1818,7 @@ const manageColumns = computed<DataTableColumns<CdkItem>>(() => {
           NButton,
           {
             size: 'small',
-            secondary: true,
+            type: 'warning',
             onClick: () => confirmToggleCdkStatus(row),
           },
           { default: () => (row.status === 'REVOKED' ? '恢复' : '撤销') },
@@ -1933,7 +1933,7 @@ const productColumns = computed<DataTableColumns<CdkProductItem>>(() => {
     title: '操作',
     key: 'actions',
     width: 120,
-    render: (row) => h(NButton, { size: 'small', secondary: true, onClick: () => openProductEditor(row) }, { default: () => '编辑' }),
+    render: (row) => h(NButton, { size: 'small', type: 'warning', onClick: () => openProductEditor(row) }, { default: () => '编辑' }),
   })
 
   return columns
@@ -1989,7 +1989,7 @@ const mapChallengeColumns = computed<DataTableColumns<MapChallengeRecordItem>>((
           NButton,
           {
             size: 'small',
-            secondary: true,
+            type: 'warning',
             onClick: () => fillMapChallengeForm(row),
           },
           { default: () => '载入编辑' },
@@ -2423,7 +2423,7 @@ onBeforeUnmount(() => {
                         />
                       </NFormItem>
                     </NForm>
-                    <NButton secondary block :loading="createSubmitting" @click="createMyCdks">生成给自己</NButton>
+                    <NButton type="primary" block :loading="createSubmitting" @click="createMyCdks">生成给自己</NButton>
                   </ConsolePanelCard>
 
                   <div v-else class="console-panel-stack">
@@ -2572,7 +2572,7 @@ onBeforeUnmount(() => {
                                 </div>
                               </div>
                               <div class="mobile-record-card__actions mobile-record-card__actions--dual">
-                                <NButton secondary block @click.stop="confirmToggleCdkStatus(row)">
+                                <NButton type="warning" block @click.stop="confirmToggleCdkStatus(row)">
                                   {{ row.status === 'REVOKED' ? '恢复' : '撤销' }}
                                 </NButton>
                                 <NButton type="error" block @click.stop="confirmDeleteCdk(row)">
@@ -2875,7 +2875,7 @@ onBeforeUnmount(() => {
                         </div>
                       </div>
                       <div class="mobile-record-card__actions">
-                        <NButton secondary block @click="fillMapChallengeForm(row)">载入编辑</NButton>
+                        <NButton type="warning" block @click="fillMapChallengeForm(row)">载入编辑</NButton>
                       </div>
                     </article>
                   </div>
@@ -3071,7 +3071,7 @@ onBeforeUnmount(() => {
                             @update:value="(value) => { void toggleProductActive(row, value) }"
                           />
                         </div>
-                        <NButton secondary block @click="openProductEditor(row)">编辑</NButton>
+                        <NButton type="warning" block @click="openProductEditor(row)">编辑</NButton>
                       </div>
                     </article>
                   </div>

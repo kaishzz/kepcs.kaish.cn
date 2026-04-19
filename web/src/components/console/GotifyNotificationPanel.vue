@@ -158,7 +158,7 @@ watch(
     <template #header-extra>
       <div class="gotify-panel__actions">
         <NButton secondary @click="loadConfig()">刷新</NButton>
-        <NButton secondary @click="addChannel">新增渠道</NButton>
+        <NButton type="primary" @click="addChannel">新增渠道</NButton>
         <NButton type="primary" :loading="saving" @click="saveConfig">保存配置</NButton>
       </div>
     </template>

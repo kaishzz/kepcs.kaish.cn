@@ -29,7 +29,9 @@ const showHeader = computed(() =>
       <slot name="header-extra" />
     </template>
 
-    <slot />
+    <div class="console-panel-card__body">
+      <slot />
+    </div>
   </NCard>
 </template>
 
@@ -54,8 +56,19 @@ const showHeader = computed(() =>
   line-height: 1.75;
 }
 
+.console-panel-card__body {
+  display: grid;
+  gap: var(--app-console-block-gap, 16px);
+  min-width: 0;
+  padding-top: var(--app-console-content-gap, 32px);
+}
+
 .console-panel-card :deep(.n-card-header) {
   padding-bottom: var(--app-console-header-gap, 16px);
+}
+
+.console-panel-card :deep(.n-card__content) {
+  padding-top: 0;
 }
 
 @media (max-width: 768px) {
@@ -65,6 +78,10 @@ const showHeader = computed(() =>
 
   .console-panel-card :deep(.n-card-header) {
     padding-bottom: var(--app-console-header-gap, 14px);
+  }
+
+  .console-panel-card__body {
+    padding-top: var(--app-console-content-gap, 24px);
   }
 }
 </style>
