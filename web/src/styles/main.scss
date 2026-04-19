@@ -1219,6 +1219,13 @@ img {
   grid-template-columns: minmax(320px, 0.88fr) minmax(420px, 1.12fr);
 }
 
+.console-overview-stack {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  align-content: start;
+}
+
 .console-overview-grid {
   display: grid;
   gap: 0 18px;
@@ -2001,13 +2008,18 @@ img {
 
 .console-subsection__header {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   padding-top: 2px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  padding-bottom: 0;
+  justify-items: start;
 }
 
 .console-subsection__title {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   font-size: 13px;
   font-weight: 800;
   line-height: 1.25;
@@ -2401,7 +2413,7 @@ img {
 
   .console-subsection__header {
     padding-top: 1px;
-    padding-bottom: 12px;
+    padding-bottom: 0;
   }
 
   .page-content {

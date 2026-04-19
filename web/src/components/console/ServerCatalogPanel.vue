@@ -104,7 +104,7 @@ function canAccessTab(tab: CatalogTab) {
 }
 
 function resolveAvailableTab(): CatalogTab {
-  const order: CatalogTab[] = ['kepcs', 'default-map-monitor', 'idle-restart-monitor', 'community']
+  const order: CatalogTab[] = ['kepcs', 'community', 'default-map-monitor', 'idle-restart-monitor']
   return order.find((tab) => canAccessTab(tab)) || 'kepcs'
 }
 
@@ -223,16 +223,16 @@ const tabOptions = computed(() => {
     items.push({ value: 'kepcs', label: '开水服列表' })
   }
 
+  if (props.canViewCommunity) {
+    items.push({ value: 'community', label: '社区服列表' })
+  }
+
   if (props.canViewDefaultMapMonitor) {
-    items.push({ value: 'default-map-monitor', label: '空服自动换图' })
+    items.push({ value: 'default-map-monitor', label: '空闲自动换图' })
   }
 
   if (props.canViewIdleRestartMonitor) {
-    items.push({ value: 'idle-restart-monitor', label: '空服自动重启' })
-  }
-
-  if (props.canViewCommunity) {
-    items.push({ value: 'community', label: '社区服列表' })
+    items.push({ value: 'idle-restart-monitor', label: '空闲自动重启' })
   }
 
   return items
@@ -505,7 +505,7 @@ async function saveMonitorConfig() {
       checkIntervalSeconds: monitorConfig.value.checkIntervalSeconds,
     })
     monitorConfig.value = data.config || monitorConfig.value
-    pushToast('空服自动换图配置已保存', 'success')
+    pushToast('空闲自动换图配置已保存', 'success')
     await loadDefaultMapMonitorStatus()
   } catch (error) {
     pushToast((error as Error).message, 'error')

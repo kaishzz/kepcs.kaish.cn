@@ -185,7 +185,7 @@ async function saveConfig() {
       checkIntervalSeconds: config.value.checkIntervalSeconds,
     })
     config.value = data.config || config.value
-    pushToast('空服自动换图总开关已保存', 'success')
+    pushToast('空闲自动换图总开关已保存', 'success')
     await loadPanel()
   }
   catch (error) {
@@ -448,8 +448,8 @@ watch(
 
 <template>
   <ConsolePanelCard
-    title="空服自动换图"
-    description="统一管理空服换图巡检、批量策略和单服策略配置。"
+    title="空闲自动换图"
+    description="统一管理空闲自动换图巡检、批量策略和单服策略配置。"
   >
     <template #header-extra>
       <div class="catalog-header-extra">

@@ -235,11 +235,11 @@ const firstAvailableAgentTab = computed(() => {
 
 const agentPanelTabOptions = computed(() =>
   [
-    props.canViewNodes ? { label: '节点列表', value: 'nodes' } : null,
-    props.canViewControl ? { label: '服务器操作', value: 'control' } : null,
-    props.canViewCommands ? { label: '节点指令', value: 'commands' } : null,
+    props.canViewNodes ? { label: '节点管理', value: 'nodes' } : null,
+    props.canViewControl ? { label: '批量操作', value: 'control' } : null,
+    props.canViewCommands ? { label: '节点操作', value: 'commands' } : null,
     props.canViewSchedules ? { label: '定时任务', value: 'schedules' } : null,
-    props.canViewSchedules ? { label: '通知渠道', value: 'notifications' } : null,
+    props.canViewSchedules ? { label: '通知管理', value: 'notifications' } : null,
     props.canViewLogs ? { label: '日志管理', value: 'logs' } : null,
   ].filter(Boolean) as Array<{ label: string, value: typeof agentPanelTab.value }>,
 )
@@ -381,6 +381,12 @@ function nodeStatusType(status?: ManagedNodeItem['status']) {
   if (status === 'ONLINE') return 'success'
   if (status === 'DISABLED') return 'warning'
   return 'default'
+}
+
+function nodeCardStateClass(node: ManagedNodeItem) {
+  if (node.status === 'ONLINE') return 'is-online'
+  if (node.status === 'OFFLINE') return 'is-offline'
+  return 'is-disabled'
 }
 
 function commandStatusType(status?: NodeCommandItem['status']) {
@@ -1286,7 +1292,7 @@ async function saveSchedule() {
 function confirmDeleteSchedule(schedule: NodeCommandScheduleItem) {
   openConfirmDialog(
     '确认删除定时任务',
-    ['删除后不会再自动下发该节点指令', `${schedule.name} · ${commandActionText(schedule.commandType)}`],
+    ['删除后不会再自动下发该节点操作', `${schedule.name} · ${commandActionText(schedule.commandType)}`],
     '确认删除',
     async () => {
       await http.delete(`${CONSOLE_API_BASE}/agent/schedules/${encodeURIComponent(schedule.id)}`)
@@ -1302,7 +1308,7 @@ function confirmDeleteSchedule(schedule: NodeCommandScheduleItem) {
 function confirmToggleSchedule(schedule: NodeCommandScheduleItem, nextValue: boolean) {
   openConfirmDialog(
     nextValue ? '确认启用定时任务' : '确认停用定时任务',
-    [nextValue ? '启用后会按设定时间自动下发节点指令' : '停用后不会继续自动下发节点指令', schedule.name],
+    [nextValue ? '启用后会按设定时间自动下发节点操作' : '停用后不会继续自动下发节点操作', schedule.name],
     nextValue ? '确认启用' : '确认停用',
     async () => {
       await http.patch(`${CONSOLE_API_BASE}/agent/schedules/${encodeURIComponent(schedule.id)}`, {
@@ -1458,7 +1464,7 @@ onBeforeUnmount(() => {
 
     <Transition name="console-panel-switch" mode="out-in">
       <div :key="agentPanelTab" class="agent-panel-stack">
-        <ConsolePanelCard v-if="agentPanelTab === 'nodes' && props.canViewNodes" title="节点列表" description="统一查看节点状态、基础信息和启停配置。">
+        <ConsolePanelCard v-if="agentPanelTab === 'nodes' && props.canViewNodes" title="节点管理" description="统一查看节点状态、基础信息和启停配置。">
         <template #header-extra>
           <NSpace size="small">
             <NButton secondary class="console-action-icon" title="刷新列表" @click="refreshAll()">↻</NButton>
@@ -1475,7 +1481,7 @@ onBeforeUnmount(() => {
             v-for="node in nodes"
             :key="node.id"
             class="agent-node-card"
-            :class="{ 'is-active': selectedControlNodeId === node.id }"
+            :class="[nodeCardStateClass(node), { 'is-active': selectedControlNodeId === node.id }]"
             @click="selectNode(node)"
           >
             <div class="agent-node-card__top">
@@ -1539,7 +1545,7 @@ onBeforeUnmount(() => {
           </div>
         </ConsolePanelCard>
 
-        <ConsolePanelCard v-else-if="agentPanelTab === 'control' && props.canViewControl" title="服务器操作" description="按节点、分组和勾选服务器执行统一的批量操作。">
+        <ConsolePanelCard v-else-if="agentPanelTab === 'control' && props.canViewControl" title="批量操作" description="按节点、分组和勾选服务器执行统一的批量操作。">
           <div v-if="selectedNode" class="agent-control-stack">
             <div class="agent-selected-node-banner console-panel-banner">
               <div class="console-panel-banner__copy">
@@ -1600,7 +1606,7 @@ onBeforeUnmount(() => {
 
               <section class="agent-action-section">
                 <div class="agent-action-section__header">
-                  <strong>批量服务器操作</strong>
+                <strong>批量操作</strong>
                   <span>
                     {{
                       selectedServers.length
@@ -1673,12 +1679,12 @@ onBeforeUnmount(() => {
           <div v-else class="hero-note min-h-[420px]">
             <div class="hero-note__inner">
               <div class="hero-note__title">请选择一个节点</div>
-              <div class="hero-note__desc">先在节点列表里选中一个节点, 再回来执行服务器操作</div>
+              <div class="hero-note__desc">先在节点管理里选中一个节点, 再回来执行批量操作</div>
             </div>
           </div>
         </ConsolePanelCard>
 
-        <ConsolePanelCard v-else-if="agentPanelTab === 'commands' && props.canViewCommands" title="节点指令" description="集中下发节点维护命令和 RCON 指令，保持统一的命令面板结构。">
+        <ConsolePanelCard v-else-if="agentPanelTab === 'commands' && props.canViewCommands" title="节点操作" description="集中下发节点维护命令和 RCON 指令，保持统一的命令面板结构。">
           <div v-if="selectedNode" class="agent-control-stack">
             <div class="agent-selected-node-banner console-panel-banner">
               <div class="console-panel-banner__copy">
@@ -1692,7 +1698,7 @@ onBeforeUnmount(() => {
               <section class="agent-command-section agent-command-section--flat">
                 <div class="agent-action-section__header">
                   <strong>节点选择</strong>
-                  <span>节点指令不会要求你勾选单台服务器, 直接对当前节点执行</span>
+                  <span>节点操作不会要求你勾选单台服务器, 直接对当前节点执行</span>
                 </div>
                 <NForm label-placement="top" class="console-field-grid cols-2 agent-toolbar-grid">
                   <NFormItem label="节点">
@@ -1789,7 +1795,7 @@ onBeforeUnmount(() => {
           <div v-else class="hero-note min-h-[320px]">
             <div class="hero-note__inner">
               <div class="hero-note__title">请选择一个节点</div>
-              <div class="hero-note__desc">先在节点列表里选中一个节点, 再回来执行节点指令</div>
+              <div class="hero-note__desc">先在节点管理里选中一个节点, 再回来执行节点操作</div>
             </div>
           </div>
         </ConsolePanelCard>
@@ -2045,7 +2051,7 @@ onBeforeUnmount(() => {
           <div v-else class="hero-note min-h-[240px]">
             <div class="hero-note__inner">
               <div class="hero-note__title">暂无命令</div>
-              <div class="hero-note__desc">切到服务器操作执行命令后, 这里就会显示记录</div>
+              <div class="hero-note__desc">切到批量操作执行命令后, 这里就会显示记录</div>
             </div>
           </div>
         </ConsolePanelCard>
@@ -2408,20 +2414,54 @@ onBeforeUnmount(() => {
 }
 
 .agent-node-card {
+  --agent-node-border: var(--app-border-soft);
+  --agent-node-border-hover: var(--app-console-hover-border);
+  --agent-node-border-active: rgba(255, 255, 255, 0.16);
+  --agent-node-ring-rgb: 236, 240, 246;
   display: grid;
   gap: 12px;
   padding: calc(var(--app-console-surface-pad-y-lg) + 2px) var(--app-console-surface-pad-x) var(--app-console-surface-pad-y-lg);
+  border-color: var(--agent-node-border);
   cursor: pointer;
-  transition: border-color 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
 }
 
-.agent-node-card:hover,
+.agent-node-card.is-online {
+  --agent-node-border: var(--app-button-primary-border);
+  --agent-node-border-hover: var(--app-button-primary-border-hover);
+  --agent-node-border-active: var(--app-button-primary-border-active);
+  --agent-node-ring-rgb: var(--app-button-primary-rgb);
+}
+
+.agent-node-card.is-offline {
+  --agent-node-border: var(--app-button-danger-border);
+  --agent-node-border-hover: var(--app-button-danger-border-hover);
+  --agent-node-border-active: var(--app-button-danger-border-active);
+  --agent-node-ring-rgb: var(--app-button-danger-rgb);
+}
+
+.agent-node-card.is-disabled {
+  --agent-node-border: var(--app-button-neutral-border);
+  --agent-node-border-hover: var(--app-button-neutral-border-hover);
+  --agent-node-border-active: var(--app-button-neutral-border-active);
+}
+
+.agent-node-card:hover {
+  border-color: var(--agent-node-border-hover);
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .agent-server-row:hover {
   border-color: rgba(99, 226, 182, 0.18);
   background: rgba(255, 255, 255, 0.02);
 }
 
-.agent-node-card.is-active,
+.agent-node-card.is-active {
+  border-color: var(--agent-node-border-active);
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: inset 0 0 0 1px rgba(var(--agent-node-ring-rgb), 0.12);
+}
+
 .agent-server-row.is-active {
   border-color: rgba(99, 226, 182, 0.28);
   background: rgba(99, 226, 182, 0.05);
@@ -2595,12 +2635,16 @@ onBeforeUnmount(() => {
 
 .agent-action-section__header {
   display: grid;
-  gap: 6px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  gap: 8px;
+  padding-bottom: 0;
 }
 
 .agent-action-section__header strong {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--app-text);
   font-size: 13px;
   font-weight: 800;

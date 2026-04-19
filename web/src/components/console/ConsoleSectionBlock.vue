@@ -38,12 +38,10 @@ defineProps<{
 
 .console-section-block__header {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
   padding-top: 2px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
 }
 
 .console-section-block__copy,
@@ -54,6 +52,11 @@ defineProps<{
 }
 
 .console-section-block__title {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--app-text);
   font-size: 13px;
   font-weight: 800;
@@ -84,7 +87,6 @@ defineProps<{
     align-items: stretch;
     flex-direction: column;
     padding-top: 1px;
-    padding-bottom: 12px;
   }
 
   .console-section-block__extra {

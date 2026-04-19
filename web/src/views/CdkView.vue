@@ -54,6 +54,7 @@ import type {
   CdkItem,
   CdkProductItem,
   MapChallengeRecordItem,
+  ManagedNodeItem,
   OrderItem,
   SessionUser,
 } from '../types'
@@ -97,6 +98,7 @@ const manageLoading = ref(false)
 const logLoading = ref(false)
 const orderLogLoading = ref(false)
 const productLoading = ref(false)
+const nodeOverviewLoading = ref(false)
 const mapChallengeLoading = ref(false)
 const redeemSubmitting = ref(false)
 const createSubmitting = ref(false)
@@ -116,6 +118,7 @@ const managedCdks = ref<CdkItem[]>([])
 const logs = ref<AuditLogItem[]>([])
 const orderLogs = ref<OrderItem[]>([])
 const products = ref<CdkProductItem[]>([])
+const overviewNodes = ref<ManagedNodeItem[]>([])
 const mapChallenges = ref<MapChallengeRecordItem[]>([])
 const checkedRowKeys = ref<DataTableRowKey[]>([])
 const myExpandedRowKeys = ref<DataTableRowKey[]>([])
@@ -137,6 +140,7 @@ function createConsoleLoadState(): Record<ConsoleLoadKey, boolean> {
 }
 
 const consoleLoadState = ref<Record<ConsoleLoadKey, boolean>>(createConsoleLoadState())
+const nodeOverviewLoaded = ref(false)
 
 function createStablePagination<T>(rows: Ref<T[]>, pageSize: number) {
   const page = ref(1)
@@ -339,6 +343,12 @@ const canViewAgentControl = computed(() => hasConsolePermission('console.agents.
 const canViewAgentCommands = computed(() => hasConsolePermission('console.agents.commands'))
 const canViewAgentSchedules = computed(() => hasConsolePermission('console.agents.schedules'))
 const canViewAgentLogs = computed(() => hasConsolePermission('console.agents.logs'))
+const canViewNodeOverview = computed(() =>
+  canViewAgentNodes.value
+  || canViewAgentControl.value
+  || canViewAgentCommands.value
+  || canViewAgentSchedules.value,
+)
 const canViewAgentTab = computed(() =>
   canViewAgentNodes.value
   || canViewAgentControl.value
@@ -362,7 +372,7 @@ const tabOptions = computed(() => {
   if (canManageMapChallenges.value) tabs.push({ name: 'map-challenges', label: '魔怔数据' })
   if (canViewAdminTools.value) tabs.push({ name: 'admins', label: '新增管理' })
   if (canViewAgentTab.value) tabs.push({ name: 'agents', label: '服务器控制' })
-  if (canViewServerCatalog.value) tabs.push({ name: 'server-catalog', label: '服务器目录' })
+  if (canViewServerCatalog.value) tabs.push({ name: 'server-catalog', label: '服务器数据' })
   if (canManageProducts.value) tabs.push({ name: 'products', label: '商品管理' })
 
   return tabs
@@ -383,7 +393,7 @@ const manageSubTabOptions = [
 const logSubTabOptions = computed(() =>
   [
     canViewAuditLogs.value ? { label: '操作日志', value: 'audit' } : null,
-    canViewOrderLogs.value ? { label: '订单记录', value: 'orders' } : null,
+    canViewOrderLogs.value ? { label: '订单日志', value: 'orders' } : null,
   ].filter(Boolean) as Array<{ label: string, value: LogSubTab }>,
 )
 
@@ -481,31 +491,52 @@ const statusBreakdown = computed(() => {
   }))
 })
 
-const consoleOverviewStats = computed(() => {
+const consoleOverviewCards = computed(() => {
+  const cards: Array<{
+    title: string
+    items: Array<{ label: string, value: number }>
+    loading: boolean
+  }> = []
+
   if (canManageProducts.value) {
     const activeProducts = products.value.filter((item) => item.isActive)
-    const inactiveProducts = products.value.filter((item) => !item.isActive)
-    const whitelistProducts = products.value.filter((item) => item.productType === 'WHITELIST' || item.productType === 'WHITELIST_CDK')
-    return {
+    cards.push({
       title: '商品概览',
       items: [
         { label: '商品总数', value: products.value.length },
         { label: '已上架', value: activeProducts.length },
-        { label: '已下架', value: inactiveProducts.length },
-        { label: '白名单类', value: whitelistProducts.length },
       ],
-    }
+      loading: productLoading.value && !consoleLoadState.value.products,
+    })
   }
 
-  return {
-    title: '我的概览',
-    items: [
-      { label: '持有总数', value: myCdks.value.length },
-      { label: '当前可用', value: myCdks.value.filter((item) => item.isValid).length },
-      { label: '已使用', value: myCdks.value.filter((item) => item.status === 'USED').length },
-      { label: '已失效', value: myCdks.value.filter((item) => item.status === 'REVOKED' || item.isExpired).length },
-    ],
+  if (canViewNodeOverview.value) {
+    cards.push({
+      title: '节点概览',
+      items: [
+        { label: '节点总数', value: overviewNodes.value.length },
+        { label: '在线节点', value: overviewNodes.value.filter((item) => item.status === 'ONLINE').length },
+      ],
+      loading: nodeOverviewLoading.value && !nodeOverviewLoaded.value,
+    })
   }
+
+  if (cards.length) {
+    return cards
+  }
+
+  return [
+    {
+      title: '我的概览',
+      items: [
+        { label: '持有总数', value: myCdks.value.length },
+        { label: '当前可用', value: myCdks.value.filter((item) => item.isValid).length },
+        { label: '已使用', value: myCdks.value.filter((item) => item.status === 'USED').length },
+        { label: '已失效', value: myCdks.value.filter((item) => item.status === 'REVOKED' || item.isExpired).length },
+      ],
+      loading: false,
+    },
+  ]
 })
 
 const roleText = computed(() => {
@@ -1028,6 +1059,26 @@ async function loadProducts() {
   }
 }
 
+async function loadOverviewNodes() {
+  if (!canViewNodeOverview.value) {
+    overviewNodes.value = []
+    nodeOverviewLoaded.value = false
+    return
+  }
+
+  nodeOverviewLoading.value = true
+
+  try {
+    const { data } = await http.get(`${CONSOLE_API_BASE}/agent/nodes`)
+    overviewNodes.value = data.nodes || []
+    nodeOverviewLoaded.value = true
+  } catch (error) {
+    pushToast((error as Error).message, 'error')
+  } finally {
+    nodeOverviewLoading.value = false
+  }
+}
+
 function isProductTogglePending(productId: string) {
   return productTogglePendingIds.value.includes(productId)
 }
@@ -1180,6 +1231,10 @@ async function ensureConsoleOverviewLoaded(force = false) {
 
   if (canManageProducts.value && (force || !consoleLoadState.value.products)) {
     tasks.push(loadProducts())
+  }
+
+  if (canViewNodeOverview.value && (force || !nodeOverviewLoaded.value)) {
+    tasks.push(loadOverviewNodes())
   }
 
   if (tasks.length) {
@@ -1372,6 +1427,8 @@ async function handleUserMenuSelect(key: string) {
     orderLogs.value = []
     mapChallenges.value = []
     products.value = []
+    overviewNodes.value = []
+    nodeOverviewLoaded.value = false
     consoleLoadState.value = createConsoleLoadState()
     myCdkPagination.reset()
     managedCdkPagination.reset()
@@ -2202,20 +2259,27 @@ onBeforeUnmount(() => {
 
     <div v-else class="console-wrap">
       <div class="console-hero-grid">
-        <NCard class="surface-card h-full console-chart-card" :title="consoleOverviewStats.title">
-          <NSpin :show="canManageProducts && productLoading && !consoleLoadState.products">
-            <div class="console-overview-grid">
-              <div
-                v-for="item in consoleOverviewStats.items"
-                :key="item.label"
-                class="console-stat-box"
-              >
-                <div class="console-stat-box__label">{{ item.label }}</div>
-                <div class="console-stat-box__value">{{ item.value }}</div>
+        <div class="console-overview-stack">
+          <NCard
+            v-for="card in consoleOverviewCards"
+            :key="card.title"
+            class="surface-card h-full console-chart-card"
+            :title="card.title"
+          >
+            <NSpin :show="card.loading">
+              <div class="console-overview-grid">
+                <div
+                  v-for="item in card.items"
+                  :key="item.label"
+                  class="console-stat-box"
+                >
+                  <div class="console-stat-box__label">{{ item.label }}</div>
+                  <div class="console-stat-box__value">{{ item.value }}</div>
+                </div>
               </div>
-            </div>
-          </NSpin>
-        </NCard>
+            </NSpin>
+          </NCard>
+        </div>
 
         <NCard class="surface-card h-full console-chart-card" title="CDK 状态概览">
           <div class="status-breakdown-panel">
@@ -2693,7 +2757,7 @@ onBeforeUnmount(() => {
 
                   <ConsolePanelCard
                     v-else-if="canViewOrderLogs"
-                    title="订单记录"
+                    title="订单日志"
                     description="按订单号、SteamID、邮箱、状态和商品类型统一检索支付订单。"
                   >
                     <ConsoleSectionBlock title="筛选条件">
@@ -2964,7 +3028,7 @@ onBeforeUnmount(() => {
             />
           </NTabPane>
 
-          <NTabPane v-if="canViewServerCatalog" name="server-catalog" tab="服务器目录">
+          <NTabPane v-if="canViewServerCatalog" name="server-catalog" tab="服务器数据">
             <ServerCatalogPanel
               v-if="activeTab === 'server-catalog'"
               :active="activeTab === 'server-catalog'"

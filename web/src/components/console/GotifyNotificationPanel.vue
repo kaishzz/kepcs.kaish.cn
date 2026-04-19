@@ -152,7 +152,7 @@ watch(
 
 <template>
   <ConsolePanelCard
-    title="Gotify 通知渠道"
+    title="Gotify 通知管理"
     description="统一管理多渠道 Gotify 配置，后续定时任务与命令通知都复用这里的渠道体系。"
   >
     <template #header-extra>
