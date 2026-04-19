@@ -33,6 +33,7 @@ import type {
   ManagedNodeItem,
   NodeCommandItem,
   NodeCommandLogItem,
+  NodeScheduleConfig,
   NodeCommandScheduleItem,
   NodeCommandStatus,
 } from '../../types'
@@ -55,6 +56,7 @@ const props = withDefaults(defineProps<{
 type NodeFormMode = 'create' | 'edit'
 type CommandStatusFilter = 'ALL' | NodeCommandStatus
 type RconTargetMode = 'group' | 'servers'
+type ScheduleMode = 'interval_minutes' | 'daily' | 'every_n_days' | 'every_n_hours'
 interface CommandGroupResultRow extends Record<string, unknown> {
   changed?: boolean
   message?: string
@@ -80,6 +82,25 @@ type NodeActionType =
   | 'node.get_nowver'
   | 'node.monitor_check'
   | 'node.monitor_start'
+
+interface ScheduleFormState {
+  id: string
+  name: string
+  nodeId: string
+  commandType: NodeActionType
+  scheduleMode: ScheduleMode
+  scheduleIntervalMinutes: number
+  scheduleTime: string
+  scheduleIntervalDays: number
+  scheduleAnchorDate: number
+  scheduleIntervalHours: number
+  scheduleWindowStart: string
+  scheduleWindowEnd: string
+  isActive: boolean
+  notificationChannelKeys: string[]
+  rconGroup: string
+  rconCommand: string
+}
 
 const commandStatusOptions = [
   { label: '全部状态', value: 'ALL' },
@@ -124,18 +145,7 @@ const nodeCommandForm = ref({
 
 const gotifyChannels = ref<GotifyChannelItem[]>([])
 
-const scheduleForm = ref({
-  id: '',
-  name: '',
-  nodeId: '',
-  commandType: 'node.check_update' as NodeActionType,
-  intervalMinutes: 60,
-  nextRunAt: Date.now() + 60 * 60 * 1000,
-  isActive: true,
-  notificationChannelKeys: [] as string[],
-  rconGroup: 'ALL',
-  rconCommand: '',
-})
+const scheduleForm = ref<ScheduleFormState>(createScheduleForm())
 
 const nodeModal = ref({
   show: false,
@@ -223,6 +233,13 @@ const nodeInstructionOptions = [
   { label: '崩溃检查', value: 'node.monitor_check' },
   { label: '崩溃检查后启动', value: 'node.monitor_start' },
   { label: 'RCON 指令', value: 'node.rcon_command' },
+]
+
+const scheduleModeOptions = [
+  { label: '每 N 分钟', value: 'interval_minutes' },
+  { label: '每天固定时间', value: 'daily' },
+  { label: '每 N 天固定时间', value: 'every_n_days' },
+  { label: '每 N 小时按时间窗', value: 'every_n_hours' },
 ]
 
 const firstAvailableAgentTab = computed(() => {
@@ -376,6 +393,168 @@ function formatIntervalMinutes(value: number) {
 
   return `${minutes} 分钟`
 }
+
+function isValidScheduleTime(value: string) {
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(value || '').trim())
+}
+
+function normalizeScheduleTime(value: string, label: string) {
+  const safeValue = String(value || '').trim()
+  if (!isValidScheduleTime(safeValue)) {
+    throw new Error(`${label}格式必须为 HH:mm`)
+  }
+
+  return safeValue
+}
+
+function createScheduleForm(nodeId = selectedControlNodeId.value || nodes.value[0]?.id || ''): ScheduleFormState {
+  return {
+    id: '',
+    name: '',
+    nodeId,
+    commandType: 'node.check_update',
+    scheduleMode: 'every_n_hours',
+    scheduleIntervalMinutes: 60,
+    scheduleTime: '03:00',
+    scheduleIntervalDays: 1,
+    scheduleAnchorDate: dayjs().startOf('day').valueOf(),
+    scheduleIntervalHours: 1,
+    scheduleWindowStart: '00:00',
+    scheduleWindowEnd: '23:59',
+    isActive: true,
+    notificationChannelKeys: [],
+    rconGroup: 'ALL',
+    rconCommand: '',
+  }
+}
+
+function buildScheduleConfigSummary(config: NodeScheduleConfig | null | undefined, fallbackIntervalMinutes = 60) {
+  const type = config?.type || 'interval_minutes'
+
+  if (type === 'daily') {
+    return `每天 ${config?.time || '03:00'}`
+  }
+
+  if (type === 'every_n_days') {
+    return `每 ${Math.max(1, Number(config?.intervalDays) || 1)} 天 ${config?.time || '03:00'}`
+  }
+
+  if (type === 'every_n_hours') {
+    return `每 ${Math.max(1, Number(config?.intervalHours) || 1)} 小时 ${config?.windowStart || '00:00'} - ${config?.windowEnd || '23:59'}`
+  }
+
+  return `每 ${formatIntervalMinutes(config?.intervalMinutes || fallbackIntervalMinutes)} 执行一次`
+}
+
+function buildScheduleConfigFromForm(form: ScheduleFormState): NodeScheduleConfig {
+  if (form.scheduleMode === 'daily') {
+    return {
+      type: 'daily',
+      time: normalizeScheduleTime(form.scheduleTime, '执行时间'),
+    }
+  }
+
+  if (form.scheduleMode === 'every_n_days') {
+    if (!Number.isFinite(Number(form.scheduleAnchorDate))) {
+      throw new Error('请填写开始日期')
+    }
+
+    return {
+      type: 'every_n_days',
+      intervalDays: Math.max(1, Number(form.scheduleIntervalDays) || 1),
+      anchorDate: dayjs(Number(form.scheduleAnchorDate)).format('YYYY-MM-DD'),
+      time: normalizeScheduleTime(form.scheduleTime, '执行时间'),
+    }
+  }
+
+  if (form.scheduleMode === 'every_n_hours') {
+    return {
+      type: 'every_n_hours',
+      intervalHours: Math.max(1, Number(form.scheduleIntervalHours) || 1),
+      windowStart: normalizeScheduleTime(form.scheduleWindowStart, '开始时间'),
+      windowEnd: normalizeScheduleTime(form.scheduleWindowEnd, '结束时间'),
+    }
+  }
+
+  return {
+    type: 'interval_minutes',
+    intervalMinutes: Math.max(1, Number(form.scheduleIntervalMinutes) || 1),
+  }
+}
+
+function resolveScheduleFormFields(
+  config: NodeScheduleConfig | null | undefined,
+  fallbackIntervalMinutes = 60,
+  fallbackNextRunAt?: string | null,
+) {
+  const fallbackDay = fallbackNextRunAt && dayjs(fallbackNextRunAt).isValid()
+    ? dayjs(fallbackNextRunAt)
+    : dayjs()
+  const safeConfig = config?.type
+    ? config
+    : {
+      type: 'interval_minutes' as const,
+      intervalMinutes: fallbackIntervalMinutes,
+    }
+
+  if (safeConfig.type === 'daily') {
+    return {
+      scheduleMode: 'daily' as const,
+      scheduleIntervalMinutes: fallbackIntervalMinutes,
+      scheduleTime: safeConfig.time || fallbackDay.format('HH:mm'),
+      scheduleIntervalDays: 1,
+      scheduleAnchorDate: fallbackDay.startOf('day').valueOf(),
+      scheduleIntervalHours: 1,
+      scheduleWindowStart: '00:00',
+      scheduleWindowEnd: '23:59',
+    }
+  }
+
+  if (safeConfig.type === 'every_n_days') {
+    return {
+      scheduleMode: 'every_n_days' as const,
+      scheduleIntervalMinutes: fallbackIntervalMinutes,
+      scheduleTime: safeConfig.time || fallbackDay.format('HH:mm'),
+      scheduleIntervalDays: Math.max(1, Number(safeConfig.intervalDays) || 1),
+      scheduleAnchorDate: dayjs(safeConfig.anchorDate || fallbackDay.format('YYYY-MM-DD')).startOf('day').valueOf(),
+      scheduleIntervalHours: 1,
+      scheduleWindowStart: '00:00',
+      scheduleWindowEnd: '23:59',
+    }
+  }
+
+  if (safeConfig.type === 'every_n_hours') {
+    return {
+      scheduleMode: 'every_n_hours' as const,
+      scheduleIntervalMinutes: fallbackIntervalMinutes,
+      scheduleTime: fallbackDay.format('HH:mm'),
+      scheduleIntervalDays: 1,
+      scheduleAnchorDate: fallbackDay.startOf('day').valueOf(),
+      scheduleIntervalHours: Math.max(1, Number(safeConfig.intervalHours) || 1),
+      scheduleWindowStart: safeConfig.windowStart || '00:00',
+      scheduleWindowEnd: safeConfig.windowEnd || '23:59',
+    }
+  }
+
+  return {
+    scheduleMode: 'interval_minutes' as const,
+    scheduleIntervalMinutes: Math.max(1, Number(safeConfig.intervalMinutes) || fallbackIntervalMinutes || 60),
+    scheduleTime: fallbackDay.format('HH:mm'),
+    scheduleIntervalDays: 1,
+    scheduleAnchorDate: fallbackDay.startOf('day').valueOf(),
+    scheduleIntervalHours: 1,
+    scheduleWindowStart: '00:00',
+    scheduleWindowEnd: '23:59',
+  }
+}
+
+const scheduleFormSummary = computed(() => {
+  try {
+    return buildScheduleConfigSummary(buildScheduleConfigFromForm(scheduleForm.value), scheduleForm.value.scheduleIntervalMinutes)
+  } catch {
+    return '请先完善执行规则'
+  }
+})
 
 function nodeStatusType(status?: ManagedNodeItem['status']) {
   if (status === 'ONLINE') return 'success'
@@ -1212,28 +1391,22 @@ async function openLogModal(command: NodeCommandItem) {
 }
 
 function resetScheduleForm() {
-  scheduleForm.value = {
-    id: '',
-    name: '',
-    nodeId: selectedControlNodeId.value || nodes.value[0]?.id || '',
-    commandType: 'node.check_update',
-    intervalMinutes: 60,
-    nextRunAt: Date.now() + 60 * 60 * 1000,
-    isActive: true,
-    notificationChannelKeys: [],
-    rconGroup: 'ALL',
-    rconCommand: '',
-  }
+  scheduleForm.value = createScheduleForm(selectedControlNodeId.value || nodes.value[0]?.id || '')
 }
 
 function fillScheduleForm(schedule: NodeCommandScheduleItem) {
+  const scheduleFields = resolveScheduleFormFields(
+    schedule.scheduleConfig,
+    schedule.intervalMinutes,
+    schedule.nextRunAt,
+  )
+
   scheduleForm.value = {
     id: schedule.id,
     name: schedule.name,
     nodeId: schedule.nodeId,
     commandType: schedule.commandType as NodeActionType,
-    intervalMinutes: schedule.intervalMinutes,
-    nextRunAt: schedule.nextRunAt ? new Date(schedule.nextRunAt).getTime() : Date.now() + 60 * 60 * 1000,
+    ...scheduleFields,
     isActive: schedule.isActive,
     notificationChannelKeys: Array.isArray(schedule.notificationChannelKeys) ? [...schedule.notificationChannelKeys] : [],
     rconGroup: String(schedule.payload?.group || 'ALL'),
@@ -1267,8 +1440,7 @@ async function saveSchedule() {
       commandType: scheduleForm.value.commandType,
       payload: buildSchedulePayload(),
       notificationChannelKeys: scheduleForm.value.notificationChannelKeys,
-      intervalMinutes: scheduleForm.value.intervalMinutes,
-      nextRunAt: new Date(Number(scheduleForm.value.nextRunAt)).toISOString(),
+      scheduleConfig: buildScheduleConfigFromForm(scheduleForm.value),
       isActive: scheduleForm.value.isActive,
     }
 
@@ -1805,7 +1977,7 @@ onBeforeUnmount(() => {
             <section class="agent-command-section agent-schedule-editor">
               <div class="agent-action-section__header">
                 <strong>{{ scheduleForm.id ? '编辑定时任务' : '新增定时任务' }}</strong>
-                <span>支持按节点定时执行维护命令, 例如每小时检查更新或读取版本</span>
+                <span>支持按节点配置每天、每 N 天、每 N 小时窗口等自动执行规则</span>
               </div>
 
               <NForm label-placement="top" class="console-field-grid cols-2">
@@ -1818,11 +1990,42 @@ onBeforeUnmount(() => {
                 <NFormItem label="命令类型">
                   <NSelect v-model:value="scheduleForm.commandType" :options="nodeInstructionOptions" />
                 </NFormItem>
-                <NFormItem label="执行间隔 (分钟)">
-                  <NInputNumber v-model:value="scheduleForm.intervalMinutes" :min="1" :max="10080" :show-button="false" class="w-full" />
+                <NFormItem label="执行规则">
+                  <NSelect v-model:value="scheduleForm.scheduleMode" :options="scheduleModeOptions" />
                 </NFormItem>
-                <NFormItem label="下次执行时间">
-                  <NDatePicker v-model:value="scheduleForm.nextRunAt" type="datetime" :clearable="false" class="w-full" />
+                <NFormItem v-if="scheduleForm.scheduleMode === 'interval_minutes'" label="分钟间隔">
+                  <NInputNumber v-model:value="scheduleForm.scheduleIntervalMinutes" :min="1" :max="10080" :show-button="false" class="w-full" />
+                </NFormItem>
+                <NFormItem v-else-if="scheduleForm.scheduleMode === 'daily'" label="执行时间">
+                  <NInput v-model:value="scheduleForm.scheduleTime" placeholder="03:00" />
+                </NFormItem>
+                <template v-else-if="scheduleForm.scheduleMode === 'every_n_days'">
+                  <NFormItem label="每隔天数">
+                    <NInputNumber v-model:value="scheduleForm.scheduleIntervalDays" :min="1" :max="365" :show-button="false" class="w-full" />
+                  </NFormItem>
+                  <NFormItem label="开始日期">
+                    <NDatePicker v-model:value="scheduleForm.scheduleAnchorDate" type="date" :clearable="false" class="w-full" />
+                  </NFormItem>
+                  <NFormItem label="执行时间">
+                    <NInput v-model:value="scheduleForm.scheduleTime" placeholder="03:00" />
+                  </NFormItem>
+                </template>
+                <template v-else-if="scheduleForm.scheduleMode === 'every_n_hours'">
+                  <NFormItem label="小时间隔">
+                    <NInputNumber v-model:value="scheduleForm.scheduleIntervalHours" :min="1" :max="168" :show-button="false" class="w-full" />
+                  </NFormItem>
+                  <NFormItem label="开始时间">
+                    <NInput v-model:value="scheduleForm.scheduleWindowStart" placeholder="00:00" />
+                  </NFormItem>
+                  <NFormItem label="结束时间">
+                    <NInput v-model:value="scheduleForm.scheduleWindowEnd" placeholder="23:59" />
+                  </NFormItem>
+                </template>
+                <NFormItem label="规则预览" class="col-span-full">
+                  <div class="agent-schedule-rule-note">
+                    <strong>{{ scheduleFormSummary }}</strong>
+                    <span>保存后系统会自动计算下次执行时间，无需再手动填写。</span>
+                  </div>
                 </NFormItem>
                 <NFormItem label="启用状态">
                   <NSwitch v-model:value="scheduleForm.isActive" />
@@ -1887,7 +2090,7 @@ onBeforeUnmount(() => {
                     <div class="fold-card__title agent-command-card__title">
                       <strong>{{ schedule.name }}</strong>
                       <span>{{ schedule.node?.name || schedule.nodeId }} · {{ commandActionText(schedule.commandType) }}</span>
-                      <span class="agent-command-card__preview">每 {{ formatIntervalMinutes(schedule.intervalMinutes) }} 执行一次 · 下次 {{ formatDateTime(schedule.nextRunAt) }}</span>
+                      <span class="agent-command-card__preview">{{ schedule.scheduleSummary || `每 ${formatIntervalMinutes(schedule.intervalMinutes)} 执行一次` }} · 下次 {{ formatDateTime(schedule.nextRunAt) }}</span>
                     </div>
                     <div class="fold-card__meta agent-command-card__meta-head">
                       <NTag round :type="schedule.isActive ? 'success' : 'default'">
@@ -1924,6 +2127,10 @@ onBeforeUnmount(() => {
                           ? resolveGotifyChannelNames(schedule.notificationChannelKeys).join(' / ')
                           : '不推送'
                       }}
+                    </div>
+
+                    <div class="agent-command-card__summary">
+                      执行规则: {{ schedule.scheduleSummary || `每 ${formatIntervalMinutes(schedule.intervalMinutes)} 执行一次` }}
                     </div>
 
                     <div v-if="Object.keys(schedule.payload || {}).length" class="agent-command-card__summary">
@@ -2810,6 +3017,26 @@ onBeforeUnmount(() => {
 .agent-schedule-list-panel .agent-command-card__summary {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.agent-schedule-rule-note {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--app-border-soft);
+  border-radius: var(--app-radius-md);
+  background: rgba(255, 255, 255, 0.014);
+}
+
+.agent-schedule-rule-note strong {
+  font-size: 14px;
+  color: var(--app-text);
+}
+
+.agent-schedule-rule-note span {
+  font-size: 12px;
+  color: var(--app-text-muted);
 }
 
 @media (max-width: 1200px) {

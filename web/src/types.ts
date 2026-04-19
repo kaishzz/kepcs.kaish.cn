@@ -434,6 +434,18 @@ export interface NodeCommandLogItem {
   createdAt: string
 }
 
+export interface NodeScheduleConfig {
+  type: 'interval_minutes' | 'daily' | 'every_n_days' | 'every_n_hours'
+  intervalMinutes?: number
+  time?: string
+  intervalDays?: number
+  anchorDate?: string
+  intervalHours?: number
+  windowStart?: string
+  windowEnd?: string
+  timezone?: string
+}
+
 export interface NodeCommandScheduleItem {
   id: string
   nodeId: string
@@ -442,6 +454,8 @@ export interface NodeCommandScheduleItem {
   payload: Record<string, unknown>
   notificationChannelKeys?: string[]
   intervalMinutes: number
+  scheduleConfig?: NodeScheduleConfig | null
+  scheduleSummary?: string
   nextRunAt: string | null
   lastQueuedAt?: string | null
   lastCommandId?: string | null

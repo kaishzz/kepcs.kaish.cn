@@ -6,6 +6,12 @@ const {
   extractNodePayloadMeta,
   stripNodePayloadMeta,
 } = require("../utils/nodeCommandPayloadMeta");
+const {
+  describeNodeScheduleConfig,
+  normalizeNodeScheduleConfig,
+  resolveNextNodeScheduleRunAt,
+  scheduleConfigToLegacyIntervalMinutes,
+} = require("../utils/nodeScheduleConfig");
 
 let scheduleTimer = null;
 let runningTick = false;
@@ -28,6 +34,10 @@ function serializeNodeSchedule(row) {
   }
 
   const meta = extractNodePayloadMeta(row.payload);
+  const scheduleConfig = normalizeNodeScheduleConfig(meta.scheduleConfig, {
+    intervalMinutes: row.intervalMinutes,
+    nextRunAt: row.nextRunAt,
+  });
 
   return {
     id: row.id,
@@ -37,6 +47,8 @@ function serializeNodeSchedule(row) {
     payload: stripNodePayloadMeta(row.payload),
     notificationChannelKeys: meta.notificationChannelKeys,
     intervalMinutes: row.intervalMinutes,
+    scheduleConfig,
+    scheduleSummary: describeNodeScheduleConfig(scheduleConfig),
     nextRunAt: row.nextRunAt ? row.nextRunAt.toISOString() : null,
     lastQueuedAt: row.lastQueuedAt ? row.lastQueuedAt.toISOString() : null,
     lastCommandId: row.lastCommandId || null,
@@ -48,20 +60,54 @@ function serializeNodeSchedule(row) {
   };
 }
 
-function computeNextRunAt(baseDate, intervalMinutes, now = new Date()) {
-  const safeIntervalMinutes = Math.max(1, Number(intervalMinutes) || 1);
-  let cursor = new Date(baseDate);
-  const nowTime = now.getTime();
+function computeNextRunAt(baseDate, intervalMinutes, now = new Date(), scheduleConfig = null) {
+  return resolveNextNodeScheduleRunAt({
+    baseDate,
+    intervalMinutes,
+    scheduleConfig,
+  }, now);
+}
 
-  if (Number.isNaN(cursor.getTime())) {
-    cursor = new Date(nowTime + safeIntervalMinutes * 60 * 1000);
-  }
+function hasOwn(payload, key) {
+  return Object.prototype.hasOwnProperty.call(payload, key);
+}
 
-  while (cursor.getTime() <= nowTime) {
-    cursor = new Date(cursor.getTime() + safeIntervalMinutes * 60 * 1000);
-  }
+function resolveScheduleTiming(payload, currentRow = null) {
+  const currentMeta = extractNodePayloadMeta(currentRow?.payload);
+  const scheduleConfig = normalizeNodeScheduleConfig(
+    hasOwn(payload, "scheduleConfig") ? payload.scheduleConfig : currentMeta.scheduleConfig,
+    {
+      intervalMinutes: hasOwn(payload, "intervalMinutes")
+        ? payload.intervalMinutes
+        : currentRow?.intervalMinutes,
+      nextRunAt: hasOwn(payload, "nextRunAt")
+        ? payload.nextRunAt
+        : currentRow?.nextRunAt,
+      anchorDate: currentMeta.scheduleConfig?.anchorDate,
+      time: currentMeta.scheduleConfig?.time,
+    },
+  );
 
-  return cursor;
+  const intervalMinutes = scheduleConfigToLegacyIntervalMinutes(
+    scheduleConfig,
+    currentRow?.intervalMinutes ?? payload.intervalMinutes,
+  );
+
+  const baseDate = hasOwn(payload, "nextRunAt")
+    ? payload.nextRunAt
+    : null;
+
+  const nextRunAt = resolveNextNodeScheduleRunAt({
+    scheduleConfig,
+    intervalMinutes,
+    baseDate,
+  });
+
+  return {
+    scheduleConfig,
+    intervalMinutes,
+    nextRunAt,
+  };
 }
 
 async function listNodeSchedules({ nodeId, isActive } = {}) {
@@ -80,6 +126,7 @@ async function listNodeSchedules({ nodeId, isActive } = {}) {
 }
 
 async function createNodeSchedule(payload) {
+  const scheduleTiming = resolveScheduleTiming(payload);
   const row = await cdkPrisma.nodeCommandSchedule.create({
     data: {
       nodeId: String(payload.nodeId),
@@ -89,10 +136,11 @@ async function createNodeSchedule(payload) {
         sanitizeJsonValue(payload.payload, {}),
         {
           notificationChannelKeys: payload.notificationChannelKeys,
+          scheduleConfig: scheduleTiming.scheduleConfig,
         },
       ),
-      intervalMinutes: Math.max(1, Number(payload.intervalMinutes) || 1),
-      nextRunAt: new Date(payload.nextRunAt),
+      intervalMinutes: scheduleTiming.intervalMinutes,
+      nextRunAt: scheduleTiming.nextRunAt,
       isActive: Boolean(payload.isActive ?? true),
       createdBySteamId: String(payload.createdBySteamId || "").trim(),
     },
@@ -106,38 +154,66 @@ async function createNodeSchedule(payload) {
 
 async function updateNodeSchedule(id, payload) {
   const shouldUpdatePayload =
-    Object.prototype.hasOwnProperty.call(payload, "payload")
-    || Object.prototype.hasOwnProperty.call(payload, "notificationChannelKeys");
+    hasOwn(payload, "payload")
+    || hasOwn(payload, "notificationChannelKeys")
+    || hasOwn(payload, "scheduleConfig")
+    || hasOwn(payload, "intervalMinutes")
+    || hasOwn(payload, "nextRunAt");
+
+  const shouldUpdateTiming =
+    hasOwn(payload, "scheduleConfig")
+    || hasOwn(payload, "intervalMinutes")
+    || hasOwn(payload, "nextRunAt");
+
+  let currentRow = null;
+  let scheduleTiming = null;
 
   let nextPayload;
 
   if (shouldUpdatePayload) {
-    const existing = await cdkPrisma.nodeCommandSchedule.findUnique({
+    currentRow = await cdkPrisma.nodeCommandSchedule.findUnique({
       where: { id: String(id) },
-      select: { payload: true },
+      select: {
+        payload: true,
+        intervalMinutes: true,
+        nextRunAt: true,
+      },
     });
 
-    const currentMeta = extractNodePayloadMeta(existing?.payload);
-    const basePayload = Object.prototype.hasOwnProperty.call(payload, "payload")
+    const currentMeta = extractNodePayloadMeta(currentRow?.payload);
+    scheduleTiming = resolveScheduleTiming(payload, currentRow);
+
+    const basePayload = hasOwn(payload, "payload")
       ? sanitizeJsonValue(payload.payload, {})
-      : stripNodePayloadMeta(existing?.payload);
+      : stripNodePayloadMeta(currentRow?.payload);
 
     nextPayload = attachNodePayloadMeta(basePayload, {
-      notificationChannelKeys: Object.prototype.hasOwnProperty.call(payload, "notificationChannelKeys")
+      notificationChannelKeys: hasOwn(payload, "notificationChannelKeys")
         ? payload.notificationChannelKeys
         : currentMeta.notificationChannelKeys,
+      scheduleConfig: scheduleTiming.scheduleConfig,
     });
+  } else if (shouldUpdateTiming) {
+    currentRow = await cdkPrisma.nodeCommandSchedule.findUnique({
+      where: { id: String(id) },
+      select: {
+        payload: true,
+        intervalMinutes: true,
+        nextRunAt: true,
+      },
+    });
+    scheduleTiming = resolveScheduleTiming(payload, currentRow);
   }
 
   const row = await cdkPrisma.nodeCommandSchedule.update({
     where: { id: String(id) },
     data: {
-      name: Object.prototype.hasOwnProperty.call(payload, "name") ? String(payload.name || "").trim() : undefined,
-      commandType: Object.prototype.hasOwnProperty.call(payload, "commandType") ? String(payload.commandType || "").trim() : undefined,
+      name: hasOwn(payload, "name") ? String(payload.name || "").trim() : undefined,
+      commandType: hasOwn(payload, "commandType") ? String(payload.commandType || "").trim() : undefined,
       payload: shouldUpdatePayload ? nextPayload : undefined,
-      intervalMinutes: Object.prototype.hasOwnProperty.call(payload, "intervalMinutes") ? Math.max(1, Number(payload.intervalMinutes) || 1) : undefined,
-      nextRunAt: Object.prototype.hasOwnProperty.call(payload, "nextRunAt") ? new Date(payload.nextRunAt) : undefined,
-      isActive: Object.prototype.hasOwnProperty.call(payload, "isActive") ? Boolean(payload.isActive) : undefined,
+      intervalMinutes: shouldUpdateTiming ? scheduleTiming.intervalMinutes : undefined,
+      nextRunAt: shouldUpdateTiming ? scheduleTiming.nextRunAt : undefined,
+      isActive: hasOwn(payload, "isActive") ? Boolean(payload.isActive) : undefined,
     },
     include: {
       node: true,
@@ -155,8 +231,13 @@ async function deleteNodeSchedule(id) {
 
 async function queueScheduleRun(scheduleRow) {
   const now = new Date();
-  const nextRunAt = computeNextRunAt(scheduleRow.nextRunAt, scheduleRow.intervalMinutes, now);
   const scheduleMeta = extractNodePayloadMeta(scheduleRow.payload);
+  const nextRunAt = computeNextRunAt(
+    scheduleRow.nextRunAt,
+    scheduleRow.intervalMinutes,
+    now,
+    scheduleMeta.scheduleConfig,
+  );
 
   const updated = await cdkPrisma.nodeCommandSchedule.updateMany({
     where: {

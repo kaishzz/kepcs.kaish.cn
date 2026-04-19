@@ -38,6 +38,7 @@ test("payload meta can be attached and stripped without polluting command payloa
     notificationChannelKeys: ["ops", "alerts"],
     sourceScheduleId: "schedule-1",
     sourceScheduleName: "每小时检查更新",
+    scheduleConfig: null,
   });
 });
 

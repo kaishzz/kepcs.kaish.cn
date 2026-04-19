@@ -5,6 +5,7 @@ const {
   normalizeNotificationChannelKeys,
   stripNodePayloadMeta,
 } = require("../utils/nodeCommandPayloadMeta");
+const { describeNodeScheduleConfig, normalizeNodeScheduleConfig } = require("../utils/nodeScheduleConfig");
 
 const GOTIFY_SETTINGS_KEY = "gotify.notifications.config";
 const DEFAULT_GOTIFY_PRIORITY = 5;
@@ -258,13 +259,20 @@ async function sendGotifyNotification({ channelKeys, title, message, priority, e
 }
 
 function buildScheduledQueueNotification({ schedule, command }) {
+  const scheduleSummary = schedule.scheduleSummary
+    || describeNodeScheduleConfig(
+      normalizeNodeScheduleConfig(schedule.scheduleConfig, {
+        intervalMinutes: schedule.intervalMinutes,
+        nextRunAt: schedule.nextRunAt,
+      }),
+    );
   const lines = [
     `任务名称: ${schedule.name}`,
     `节点: ${schedule.node?.name || schedule.nodeId}`,
     `命令: ${schedule.commandType}`,
     `命令 ID: ${command.id}`,
     `触发时间: ${formatTimestamp(schedule.lastQueuedAt || new Date())}`,
-    `执行间隔: 每 ${schedule.intervalMinutes} 分钟`,
+    `执行规则: ${scheduleSummary}`,
   ];
 
   const payloadSummary = summarizeJson(stripNodePayloadMeta(schedule.payload || {}));

@@ -6,11 +6,12 @@ import {
   NFormItem,
   NInput,
   NInputNumber,
+  NSelect,
   NSpin,
   NSwitch,
   NTag,
 } from 'naive-ui'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { http } from '../../lib/api'
 import { CONSOLE_API_BASE } from '../../lib/console'
@@ -18,6 +19,10 @@ import { pushToast } from '../../lib/toast'
 import ConsolePanelCard from './ConsolePanelCard.vue'
 import ConsoleSectionBlock from './ConsoleSectionBlock.vue'
 import type { GotifyChannelItem, GotifyConfig } from '../../types'
+
+interface GotifyChannelFormItem extends GotifyChannelItem {
+  localId: string
+}
 
 const props = defineProps<{
   active: boolean
@@ -29,20 +34,70 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const saving = ref(false)
+const testing = ref(false)
 const testingKeys = ref<string[]>([])
-const form = ref<GotifyConfig>({
+const form = ref<{ channels: GotifyChannelFormItem[] }>({
   channels: [],
 })
+const testForm = ref({
+  channelKeys: [] as string[],
+  title: 'KEPCS Gotify 测试通知',
+  message: '如果你收到了这条消息，说明当前 Gotify 渠道配置可用。',
+  priority: 5,
+})
 
-function createEmptyChannel(): GotifyChannelItem {
+const channelOptions = computed(() =>
+  form.value.channels
+    .filter((channel) => channel.key)
+    .map((channel) => ({
+      label: channel.enabled ? channel.name : `${channel.name} (已停用)`,
+      value: channel.key,
+      disabled: channel.enabled === false,
+    })),
+)
+
+const previewChannel = computed(() => {
+  const selectedKey = testForm.value.channelKeys[0]
+  return form.value.channels.find((channel) => channel.key === selectedKey)
+    || form.value.channels[0]
+    || null
+})
+
+const gotifyPayloadPreview = computed(() =>
+  JSON.stringify({
+    title: testForm.value.title.trim() || 'KEPCS Gotify 测试通知',
+    message: testForm.value.message.trim() || '如果你收到了这条消息，说明当前 Gotify 渠道配置可用。',
+    priority: Number.isFinite(Number(testForm.value.priority)) ? Number(testForm.value.priority) : 5,
+  }, null, 2),
+)
+
+function syncTestFormChannels() {
+  const validKeys = new Set(form.value.channels.filter((channel) => channel.key).map((channel) => channel.key))
+  const nextKeys = testForm.value.channelKeys.filter((key) => validKeys.has(key))
+
+  if (nextKeys.length) {
+    testForm.value.channelKeys = nextKeys
+    return
+  }
+
+  const firstEnabledKey = form.value.channels.find((channel) => channel.enabled && channel.key)?.key
+  testForm.value.channelKeys = firstEnabledKey ? [firstEnabledKey] : []
+}
+
+function createLocalId() {
+  return `gotify-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`
+}
+
+function toChannelFormItem(channel?: Partial<GotifyChannelItem>): GotifyChannelFormItem {
   return {
-    key: '',
-    name: '',
-    serverUrl: 'https://gotify.kaish.cn',
-    token: '',
-    description: '',
-    enabled: true,
-    priority: 5,
+    localId: createLocalId(),
+    key: channel?.key || '',
+    name: channel?.name || '',
+    serverUrl: channel?.serverUrl || 'https://gotify.kaish.cn',
+    token: channel?.token || '',
+    description: channel?.description || '',
+    enabled: channel?.enabled !== false,
+    priority: Number.isFinite(Number(channel?.priority)) ? Number(channel?.priority) : 5,
   }
 }
 
@@ -55,17 +110,10 @@ async function loadConfig(silent = false) {
     const { data } = await http.get(`${CONSOLE_API_BASE}/agent/notifications/gotify`)
     form.value = {
       channels: Array.isArray(data.config?.channels)
-        ? data.config.channels.map((channel: GotifyChannelItem) => ({
-          key: channel.key || '',
-          name: channel.name || '',
-          serverUrl: channel.serverUrl || '',
-          token: channel.token || '',
-          description: channel.description || '',
-          enabled: channel.enabled !== false,
-          priority: Number.isFinite(Number(channel.priority)) ? Number(channel.priority) : 5,
-        }))
+        ? data.config.channels.map((channel: GotifyChannelItem) => toChannelFormItem(channel))
         : [],
     }
+    syncTestFormChannels()
     emit('updated', form.value)
   } catch (error) {
     if (!silent) {
@@ -79,7 +127,7 @@ async function loadConfig(silent = false) {
 }
 
 function addChannel() {
-  form.value.channels.push(createEmptyChannel())
+  form.value.channels.push(toChannelFormItem())
 }
 
 function removeChannel(index: number) {
@@ -106,6 +154,7 @@ async function saveConfig() {
     form.value = {
       channels: Array.isArray(data.config?.channels) ? data.config.channels : [],
     }
+    syncTestFormChannels()
     emit('updated', form.value)
     pushToast('Gotify 渠道配置已保存', 'success')
   } catch (error) {
@@ -115,7 +164,16 @@ async function saveConfig() {
   }
 }
 
-async function sendChannelTest(channel: GotifyChannelItem) {
+async function sendTestNotification(payload: {
+  channelKeys: string[]
+  title: string
+  message: string
+  priority?: number
+}) {
+  await http.post(`${CONSOLE_API_BASE}/agent/notifications/gotify/test`, payload)
+}
+
+async function sendChannelTest(channel: GotifyChannelFormItem) {
   const channelKey = String(channel.key || '').trim()
   if (!channelKey) {
     pushToast('请先保存渠道配置，再发送测试通知', 'error')
@@ -125,7 +183,7 @@ async function sendChannelTest(channel: GotifyChannelItem) {
   testingKeys.value = Array.from(new Set([...testingKeys.value, channelKey]))
 
   try {
-    await http.post(`${CONSOLE_API_BASE}/agent/notifications/gotify/test`, {
+    await sendTestNotification({
       channelKeys: [channelKey],
       title: `KEPCS 测试通知 · ${channel.name || channelKey}`,
       message: `渠道 ${channel.name || channelKey} 测试成功。如果你收到了这条消息，说明 Gotify App Token 可用。`,
@@ -136,6 +194,29 @@ async function sendChannelTest(channel: GotifyChannelItem) {
     pushToast((error as Error).message, 'error')
   } finally {
     testingKeys.value = testingKeys.value.filter((item) => item !== channelKey)
+  }
+}
+
+async function sendCustomTest() {
+  if (!testForm.value.channelKeys.length) {
+    pushToast('请先选择至少一个通知渠道', 'error')
+    return
+  }
+
+  testing.value = true
+
+  try {
+    await sendTestNotification({
+      channelKeys: testForm.value.channelKeys,
+      title: testForm.value.title.trim() || 'KEPCS Gotify 测试通知',
+      message: testForm.value.message.trim() || '如果你收到了这条消息，说明当前 Gotify 渠道配置可用。',
+      priority: Number.isFinite(Number(testForm.value.priority)) ? Number(testForm.value.priority) : 5,
+    })
+    pushToast(`测试通知已发送到 ${testForm.value.channelKeys.length} 个渠道`, 'success')
+  } catch (error) {
+    pushToast((error as Error).message, 'error')
+  } finally {
+    testing.value = false
   }
 }
 
@@ -169,12 +250,66 @@ watch(
         description="每个渠道都可以绑定一个独立的 Gotify 地址和 App Token，定时任务里可按需勾选多个渠道同时推送。"
       />
 
+      <section class="gotify-helper-card">
+        <div class="gotify-helper-card__header">
+          <strong>发送测试</strong>
+          <span>测试发送基于已保存的渠道配置，建议先保存再测试。</span>
+        </div>
+
+        <NForm label-placement="top" class="console-field-grid cols-2">
+          <NFormItem label="测试渠道" class="col-span-full">
+            <NSelect
+              v-model:value="testForm.channelKeys"
+              multiple
+              filterable
+              clearable
+              :options="channelOptions"
+              placeholder="选择要测试的 Gotify 渠道"
+            />
+          </NFormItem>
+          <NFormItem label="测试标题">
+            <NInput v-model:value="testForm.title" placeholder="KEPCS Gotify 测试通知" />
+          </NFormItem>
+          <NFormItem label="测试优先级">
+            <NInputNumber v-model:value="testForm.priority" :min="0" :max="10" :show-button="false" class="w-full" />
+          </NFormItem>
+          <NFormItem label="测试内容" class="col-span-full">
+            <NInput
+              v-model:value="testForm.message"
+              type="textarea"
+              :autosize="{ minRows: 3, maxRows: 6 }"
+              placeholder="输入测试消息正文"
+            />
+          </NFormItem>
+        </NForm>
+
+        <div class="gotify-helper-card__actions">
+          <NButton secondary :loading="testing" @click="sendCustomTest">
+            发送测试
+          </NButton>
+        </div>
+      </section>
+
+      <section class="gotify-helper-card">
+        <div class="gotify-helper-card__header">
+          <strong>发送格式</strong>
+          <span>KEPCS 会按下面的格式请求 Gotify，`token` 通过查询参数传递。</span>
+        </div>
+
+        <div class="gotify-format-card">
+          <div class="gotify-format-card__endpoint">
+            POST {{ previewChannel?.serverUrl || 'https://gotify.example.com' }}/message?token=&lt;AppToken&gt;
+          </div>
+          <pre class="gotify-format-card__payload">{{ gotifyPayloadPreview }}</pre>
+        </div>
+      </section>
+
       <div v-if="loading" class="hero-note min-h-[220px]">
         <NSpin size="large" />
       </div>
 
       <div v-else-if="form.channels.length" class="gotify-channel-list">
-        <section v-for="(channel, index) in form.channels" :key="index" class="gotify-channel-card">
+        <section v-for="(channel, index) in form.channels" :key="channel.localId" class="gotify-channel-card">
           <div class="gotify-channel-card__header">
             <div class="gotify-channel-card__title">
               <strong>{{ channel.name || `渠道 ${index + 1}` }}</strong>
@@ -243,11 +378,69 @@ watch(
   gap: 14px;
 }
 
+.gotify-helper-card,
 .gotify-panel__actions,
 .gotify-channel-card__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.gotify-helper-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--app-border-soft);
+  border-radius: var(--app-radius-md);
+  background: rgba(255, 255, 255, 0.014);
+}
+
+.gotify-helper-card__header {
+  display: grid;
+  gap: 4px;
+}
+
+.gotify-helper-card__header strong {
+  font-size: 15px;
+  color: var(--app-text);
+}
+
+.gotify-helper-card__header span {
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+
+.gotify-helper-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gotify-format-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--app-radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gotify-format-card__endpoint {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  word-break: break-all;
+}
+
+.gotify-format-card__payload {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(8, 11, 16, 0.72);
+  color: #dfe9f6;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .gotify-channel-card {

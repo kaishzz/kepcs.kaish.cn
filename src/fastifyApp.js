@@ -603,8 +603,86 @@ const nodeScheduleCreateSchema = z.object({
   commandType: z.string().trim().min(1, "命令类型不能为空").max(64, "命令类型过长").regex(/^[a-z0-9._:-]+$/i, "命令类型格式不正确"),
   payload: jsonRecordSchema.optional().default({}),
   notificationChannelKeys: z.array(z.string().trim().min(1).max(64)).max(16, "通知渠道不能超过 16 个").optional().default([]),
-  intervalMinutes: z.coerce.number().int().min(1, "执行间隔至少 1 分钟").max(10080, "执行间隔不能超过 10080 分钟"),
-  nextRunAt: z.string().trim().min(1, "下次执行时间不能为空"),
+  scheduleConfig: z.object({
+    type: z.enum(["interval_minutes", "daily", "every_n_days", "every_n_hours"]),
+    intervalMinutes: z.coerce.number().int().min(1, "执行间隔至少 1 分钟").max(10080, "执行间隔不能超过 10080 分钟").optional(),
+    time: z.string().trim().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "执行时间格式必须为 HH:mm").optional(),
+    intervalDays: z.coerce.number().int().min(1, "执行天数至少 1 天").max(365, "执行天数不能超过 365 天").optional(),
+    anchorDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "开始日期格式必须为 YYYY-MM-DD").optional(),
+    intervalHours: z.coerce.number().int().min(1, "执行小时至少 1 小时").max(168, "执行小时不能超过 168 小时").optional(),
+    windowStart: z.string().trim().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "开始时间格式必须为 HH:mm").optional(),
+    windowEnd: z.string().trim().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "结束时间格式必须为 HH:mm").optional(),
+  }).superRefine((value, ctx) => {
+    if (value.type === "interval_minutes" && value.intervalMinutes == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "请填写分钟间隔",
+        path: ["intervalMinutes"],
+      });
+    }
+
+    if (value.type === "daily" && !value.time) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "请填写执行时间",
+        path: ["time"],
+      });
+    }
+
+    if (value.type === "every_n_days") {
+      if (value.intervalDays == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写天数间隔",
+          path: ["intervalDays"],
+        });
+      }
+
+      if (!value.anchorDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写开始日期",
+          path: ["anchorDate"],
+        });
+      }
+
+      if (!value.time) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写执行时间",
+          path: ["time"],
+        });
+      }
+    }
+
+    if (value.type === "every_n_hours") {
+      if (value.intervalHours == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写小时间隔",
+          path: ["intervalHours"],
+        });
+      }
+
+      if (!value.windowStart) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写开始时间",
+          path: ["windowStart"],
+        });
+      }
+
+      if (!value.windowEnd) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写结束时间",
+          path: ["windowEnd"],
+        });
+      }
+    }
+  }).optional(),
+  intervalMinutes: z.coerce.number().int().min(1, "执行间隔至少 1 分钟").max(10080, "执行间隔不能超过 10080 分钟").optional(),
+  nextRunAt: z.string().trim().min(1, "下次执行时间不能为空").optional(),
   isActive: z.coerce.boolean().optional().default(true),
 });
 
@@ -613,6 +691,84 @@ const nodeScheduleUpdateSchema = z.object({
   commandType: z.string().trim().min(1, "命令类型不能为空").max(64, "命令类型过长").regex(/^[a-z0-9._:-]+$/i, "命令类型格式不正确").optional(),
   payload: jsonRecordSchema.optional(),
   notificationChannelKeys: z.array(z.string().trim().min(1).max(64)).max(16, "通知渠道不能超过 16 个").optional(),
+  scheduleConfig: z.object({
+    type: z.enum(["interval_minutes", "daily", "every_n_days", "every_n_hours"]),
+    intervalMinutes: z.coerce.number().int().min(1, "执行间隔至少 1 分钟").max(10080, "执行间隔不能超过 10080 分钟").optional(),
+    time: z.string().trim().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "执行时间格式必须为 HH:mm").optional(),
+    intervalDays: z.coerce.number().int().min(1, "执行天数至少 1 天").max(365, "执行天数不能超过 365 天").optional(),
+    anchorDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "开始日期格式必须为 YYYY-MM-DD").optional(),
+    intervalHours: z.coerce.number().int().min(1, "执行小时至少 1 小时").max(168, "执行小时不能超过 168 小时").optional(),
+    windowStart: z.string().trim().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "开始时间格式必须为 HH:mm").optional(),
+    windowEnd: z.string().trim().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "结束时间格式必须为 HH:mm").optional(),
+  }).superRefine((value, ctx) => {
+    if (value.type === "interval_minutes" && value.intervalMinutes == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "请填写分钟间隔",
+        path: ["intervalMinutes"],
+      });
+    }
+
+    if (value.type === "daily" && !value.time) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "请填写执行时间",
+        path: ["time"],
+      });
+    }
+
+    if (value.type === "every_n_days") {
+      if (value.intervalDays == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写天数间隔",
+          path: ["intervalDays"],
+        });
+      }
+
+      if (!value.anchorDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写开始日期",
+          path: ["anchorDate"],
+        });
+      }
+
+      if (!value.time) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写执行时间",
+          path: ["time"],
+        });
+      }
+    }
+
+    if (value.type === "every_n_hours") {
+      if (value.intervalHours == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写小时间隔",
+          path: ["intervalHours"],
+        });
+      }
+
+      if (!value.windowStart) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写开始时间",
+          path: ["windowStart"],
+        });
+      }
+
+      if (!value.windowEnd) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "请填写结束时间",
+          path: ["windowEnd"],
+        });
+      }
+    }
+  }).optional(),
   intervalMinutes: z.coerce.number().int().min(1, "执行间隔至少 1 分钟").max(10080, "执行间隔不能超过 10080 分钟").optional(),
   nextRunAt: z.string().trim().min(1, "下次执行时间不能为空").optional(),
   isActive: z.coerce.boolean().optional(),

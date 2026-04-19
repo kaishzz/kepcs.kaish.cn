@@ -1,4 +1,5 @@
 const INTERNAL_NODE_PAYLOAD_META_KEY = "__kepcsMeta";
+const { normalizeNodeScheduleConfig } = require("./nodeScheduleConfig");
 
 function sanitizeJsonRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -39,6 +40,7 @@ function normalizeNodePayloadMeta(value) {
     notificationChannelKeys: normalizeNotificationChannelKeys(meta.notificationChannelKeys),
     sourceScheduleId: normalizeString(meta.sourceScheduleId, 191) || null,
     sourceScheduleName: normalizeString(meta.sourceScheduleName, 64) || null,
+    scheduleConfig: meta.scheduleConfig ? normalizeNodeScheduleConfig(meta.scheduleConfig) : null,
   };
 }
 
@@ -117,6 +119,7 @@ function attachNodePayloadMeta(payload, meta) {
     !normalizedMeta.notificationChannelKeys.length
     && !normalizedMeta.sourceScheduleId
     && !normalizedMeta.sourceScheduleName
+    && !normalizedMeta.scheduleConfig
   ) {
     return cleanPayload;
   }
