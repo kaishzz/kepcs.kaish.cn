@@ -13,6 +13,7 @@ const { ensureRedisConnected } = require("./lib/redis");
 const {
   clearSessionUser,
   getSessionUser,
+  requireAnyPermission,
   requirePermission,
   requireUser,
   setSessionUser,
@@ -72,11 +73,13 @@ const {
   findManagedNodeByApiKeyFromHeaders,
   findManagedNodeById,
   finishNodeCommand,
+  getNodeCommandById,
   listManagedNodes,
   listNodeCommandLogs,
   listNodeCommands,
   markNodeCommandStarted,
   recordManagedNodeHeartbeat,
+  requestNodeCommandCancellation,
   rotateManagedNodeApiKey,
   serializeManagedNode,
   updateManagedNode,
@@ -585,6 +588,11 @@ const managedNodeCommandQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(100),
 });
 
+const activeNodeCommandQuerySchema = z.object({
+  nodeId: z.string().trim().optional().transform((value) => value || undefined),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(100),
+});
+
 const nodeCommandLogQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).optional().default(500),
 });
@@ -973,6 +981,12 @@ const agentCommandFinishSchema = z.object({
   success: z.coerce.boolean(),
   result: z.unknown().optional(),
   errorMessage: z.string().trim().max(1000).optional(),
+  cancelled: z.coerce.boolean().optional().default(false),
+});
+
+const commandCancellationSchema = z.object({
+  force: z.coerce.boolean().optional().default(false),
+  reason: z.string().trim().max(500).optional(),
 });
 
 function buildSessionKey(secret) {
@@ -2598,7 +2612,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/agent/nodes", { preHandler: [requirePermission("console.agents.nodes"), queryRateLimit] }, async (_request, reply) => {
+  app.get("/console/api/agent/nodes", { preHandler: [requireAnyPermission(["console.agents.nodes", "console.agents.control", "console.agents.commands", "console.agents.schedules"]), queryRateLimit] }, async (_request, reply) => {
     const nodes = await listManagedNodes();
     return reply.send({ success: true, nodes });
   });
@@ -2700,6 +2714,57 @@ async function createFastifyApp() {
     } catch (error) {
       if (error instanceof z.ZodError) {
         return sendValidationError(reply, error, "命令查询参数错误");
+      }
+
+      throw error;
+    }
+  });
+
+  app.get("/console/api/agent/commands/active", { preHandler: [requireAnyPermission(["console.agents.commands", "console.agents.logs"]), queryRateLimit] }, async (request, reply) => {
+    try {
+      const payload = activeNodeCommandQuerySchema.parse(request.query || {});
+      const commands = await listNodeCommands({
+        nodeId: payload.nodeId,
+        limit: payload.limit,
+        statuses: ["PENDING", "CLAIMED", "RUNNING"],
+      });
+      return reply.send({ success: true, commands });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return sendValidationError(reply, error, "进行中命令查询参数错误");
+      }
+
+      throw error;
+    }
+  });
+
+  app.post("/console/api/agent/commands/:id/cancel", { preHandler: [requirePermission("console.agents.commands"), adminWriteRateLimit] }, async (request, reply) => {
+    try {
+      const payload = commandCancellationSchema.parse(request.body || {});
+      const user = getSessionUser(request);
+      const command = await requestNodeCommandCancellation(request.params.id, {
+        ...payload,
+        requestedBySteamId: user.steamId,
+        requestedByRole: user.role,
+      });
+
+      await writeAuditLog({
+        actorSteamId: user.steamId,
+        actorRole: user.role,
+        action: payload.force ? "agent.command.force_cancel" : "agent.command.cancel",
+        targetType: "agent-command",
+        targetId: request.params.id,
+        detail: payload,
+      });
+
+      return reply.send({ success: true, command });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return sendValidationError(reply, error, "命令取消参数错误");
+      }
+
+      if (error?.message === "Command not found") {
+        return sendNotFoundError(reply, "命令不存在");
       }
 
       throw error;
@@ -3493,6 +3558,16 @@ async function createFastifyApp() {
 
   app.post("/agent/api/commands/claim", { preHandler: [agentApiRateLimit, requireAgentNode] }, async (request, reply) => {
     const command = await claimNextNodeCommand(request.agentNode.id);
+    return reply.send({ success: true, command });
+  });
+
+  app.get("/agent/api/commands/:id", { preHandler: [agentApiRateLimit, requireAgentNode] }, async (request, reply) => {
+    const command = await getNodeCommandById(request.params.id, { includeSecrets: true });
+
+    if (!command || command.nodeId !== request.agentNode.id) {
+      return sendNotFoundError(reply, "命令不存在");
+    }
+
     return reply.send({ success: true, command });
   });
 

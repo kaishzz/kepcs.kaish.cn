@@ -114,15 +114,18 @@ const commandStatusOptions = [
 
 const nodes = ref<ManagedNodeItem[]>([])
 const commands = ref<NodeCommandItem[]>([])
+const activeCommands = ref<NodeCommandItem[]>([])
 const commandLogs = ref<NodeCommandLogItem[]>([])
 const schedules = ref<NodeCommandScheduleItem[]>([])
 const loadingNodes = ref(false)
 const loadingCommands = ref(false)
+const loadingActiveCommands = ref(false)
 const loadingLogs = ref(false)
 const loadingSchedules = ref(false)
 const savingNode = ref(false)
 const savingSchedule = ref(false)
 const agentPanelTab = ref<'nodes' | 'control' | 'commands' | 'schedules' | 'notifications' | 'logs'>('nodes')
+const commandSubTab = ref<'actions' | 'running'>('actions')
 const selectedControlNodeId = ref('')
 const selectedCommandNodeId = ref('')
 const selectedScheduleNodeId = ref('')
@@ -223,10 +226,10 @@ const nodeInstructionOptions = [
   { label: '检查节点连通', value: 'agent.ping' },
   { label: '同步容器列表', value: 'docker.list_servers' },
   { label: '强制清理全部容器', value: 'node.kill_all' },
-  { label: '检查更新', value: 'node.check_update' },
-  { label: '验证游戏完整性', value: 'node.check_validate' },
-  { label: '更新并崩溃检查', value: 'node.check_update_monitor' },
-  { label: '更新成功后启动', value: 'node.check_update_start' },
+  { label: '检查更新（仅比对版本）', value: 'node.check_update' },
+  { label: '验证游戏完整性（立即停服）', value: 'node.check_validate' },
+  { label: '更新并崩溃检查（有更新才继续）', value: 'node.check_update_monitor' },
+  { label: '更新成功后启动（有更新且监控通过）', value: 'node.check_update_start' },
   { label: '读取当前版本', value: 'node.get_oldver' },
   { label: '读取最新版本', value: 'node.get_nowver' },
   { label: '崩溃检查', value: 'node.monitor_check' },
@@ -259,6 +262,11 @@ const agentPanelTabOptions = computed(() =>
     props.canViewLogs ? { label: '日志管理', value: 'logs' } : null,
   ].filter(Boolean) as Array<{ label: string, value: typeof agentPanelTab.value }>,
 )
+
+const commandSubTabOptions = computed(() => [
+  { label: '维护命令', value: 'actions' as const },
+  { label: `进行中命令 ${activeCommands.value.length}`, value: 'running' as const },
+])
 
 const selectedNode = computed(() =>
   nodes.value.find((node) => node.id === selectedControlNodeId.value) || null,
@@ -312,19 +320,23 @@ const selectedServers = computed(() =>
   filteredServers.value.filter((server) => selectedServerKeys.value.includes(server.key)),
 )
 
+const visibleActiveCommands = computed(() =>
+  selectedCommandNodeId.value
+    ? activeCommands.value.filter(command => command.nodeId === selectedCommandNodeId.value)
+    : activeCommands.value,
+)
+
 const summaryItems = computed(() => {
   const total = nodes.value.length
   const online = nodes.value.filter((item) => item.status === 'ONLINE').length
   const disabled = nodes.value.filter((item) => item.status === 'DISABLED').length
-  const pendingCommands = commands.value.filter((item) =>
-    ['PENDING', 'CLAIMED', 'RUNNING'].includes(item.status),
-  ).length
+  const pendingCommands = activeCommands.value.length
 
   return [
     { label: '节点总数', value: total },
     { label: '在线节点', value: online },
     { label: '停用节点', value: disabled },
-    { label: '进行中命令', value: pendingCommands },
+    { label: '进行中命令', value: pendingCommands, hint: pendingCommands ? '节点操作 > 进行中命令' : undefined },
   ]
 })
 
@@ -406,7 +418,7 @@ function normalizeScheduleTime(value: string, label: string) {
   return safeValue
 }
 
-function createScheduleForm(nodeId = selectedControlNodeId.value || nodes.value[0]?.id || ''): ScheduleFormState {
+function createScheduleForm(nodeId = selectedScheduleNodeId.value || selectedControlNodeId.value || nodes.value[0]?.id || ''): ScheduleFormState {
   return {
     id: '',
     name: '',
@@ -722,6 +734,13 @@ function commandTargetText(command: NodeCommandItem) {
 }
 
 function commandSummaryText(command: NodeCommandItem) {
+  const controlState = commandControlState(command)
+  if (controlState.requestedAt && command.status === 'RUNNING') {
+    return controlState.force
+      ? '已请求强制终止，等待 Agent 响应'
+      : '已请求终止，等待 Agent 响应'
+  }
+
   if (command.errorMessage) {
     return command.errorMessage
   }
@@ -818,6 +837,64 @@ function normalizeServerKeyList(value: unknown) {
     .filter(Boolean)
 
   return Array.from(new Set(keys))
+}
+
+function commandControlState(command: NodeCommandItem) {
+  const result = normalizeResult(command.result)
+  const control = normalizeResult(result?.control)
+  const requestedAt = typeof control?.cancellationRequestedAt === 'string'
+    ? control.cancellationRequestedAt.trim()
+    : ''
+
+  return {
+    requestedAt: requestedAt || null,
+    requestedBySteamId: typeof control?.cancellationRequestedBySteamId === 'string'
+      ? control.cancellationRequestedBySteamId.trim() || null
+      : null,
+    force: Boolean(control?.force),
+    reason: typeof control?.reason === 'string'
+      ? control.reason.trim() || null
+      : null,
+  }
+}
+
+function canGracefullyCancelCommand(command: NodeCommandItem) {
+  return ['PENDING', 'CLAIMED', 'RUNNING'].includes(command.status) && !commandControlState(command).requestedAt
+}
+
+function canForceCancelCommand(command: NodeCommandItem) {
+  return ['PENDING', 'CLAIMED', 'RUNNING'].includes(command.status) && !commandControlState(command).force
+}
+
+function upsertScheduleLocally(schedule: NodeCommandScheduleItem) {
+  const list = schedules.value.filter(item => item.id !== schedule.id)
+
+  if (!selectedScheduleNodeId.value || selectedScheduleNodeId.value === schedule.nodeId) {
+    list.push(schedule)
+  }
+
+  schedules.value = list.sort((left, right) => {
+    if (left.isActive !== right.isActive) {
+      return left.isActive ? -1 : 1
+    }
+
+    return String(left.nextRunAt || '').localeCompare(String(right.nextRunAt || ''))
+  })
+}
+
+function mergeCommandRecord(command: NodeCommandItem) {
+  commands.value = [
+    command,
+    ...commands.value.filter(item => item.id !== command.id),
+  ]
+}
+
+function mergeActiveCommandRecord(command: NodeCommandItem) {
+  const nextList = activeCommands.value.filter(item => item.id !== command.id)
+  if (['PENDING', 'CLAIMED', 'RUNNING'].includes(command.status)) {
+    nextList.unshift(command)
+  }
+  activeCommands.value = nextList
 }
 
 function buildManualRconPayload() {
@@ -924,6 +1001,34 @@ async function loadCommands(silent = false) {
   }
 }
 
+async function loadActiveCommands(silent = false) {
+  if (!props.canViewCommands && !props.canViewLogs) {
+    activeCommands.value = []
+    return
+  }
+
+  if (!silent) {
+    loadingActiveCommands.value = true
+  }
+
+  try {
+    const { data } = await http.get(`${CONSOLE_API_BASE}/agent/commands/active`, {
+      params: {
+        limit: 100,
+      },
+    })
+    activeCommands.value = data.commands || []
+  } catch (error) {
+    if (!silent) {
+      pushToast((error as Error).message, 'error')
+    }
+  } finally {
+    if (!silent) {
+      loadingActiveCommands.value = false
+    }
+  }
+}
+
 async function loadSchedules(silent = false) {
   if (!props.canViewSchedules) {
     schedules.value = []
@@ -969,7 +1074,7 @@ async function loadGotifyChannels(silent = false) {
 }
 
 async function refreshAll(silent = false) {
-  await Promise.all([loadNodes(silent), loadCommands(silent), loadSchedules(silent)])
+  await Promise.all([loadNodes(silent), loadCommands(silent), loadActiveCommands(silent), loadSchedules(silent)])
 }
 
 function startPolling() {
@@ -1390,7 +1495,7 @@ async function openLogModal(command: NodeCommandItem) {
 }
 
 function resetScheduleForm() {
-  scheduleForm.value = createScheduleForm(selectedControlNodeId.value || nodes.value[0]?.id || '')
+  scheduleForm.value = createScheduleForm(selectedScheduleNodeId.value || selectedControlNodeId.value || nodes.value[0]?.id || '')
 }
 
 function fillScheduleForm(schedule: NodeCommandScheduleItem) {
@@ -1443,15 +1548,22 @@ async function saveSchedule() {
       isActive: scheduleForm.value.isActive,
     }
 
+    let schedule: NodeCommandScheduleItem
+
     if (scheduleForm.value.id) {
-      await http.patch(`${CONSOLE_API_BASE}/agent/schedules/${encodeURIComponent(scheduleForm.value.id)}`, payload)
+      const { data } = await http.patch(`${CONSOLE_API_BASE}/agent/schedules/${encodeURIComponent(scheduleForm.value.id)}`, payload)
+      schedule = data.schedule
       pushToast('定时任务已更新', 'success')
     } else {
-      await http.post(`${CONSOLE_API_BASE}/agent/schedules`, payload)
+      const { data } = await http.post(`${CONSOLE_API_BASE}/agent/schedules`, payload)
+      schedule = data.schedule
       pushToast('定时任务已创建', 'success')
     }
 
-    resetScheduleForm()
+    selectedScheduleNodeId.value = schedule.nodeId
+    upsertScheduleLocally(schedule)
+    fillScheduleForm(schedule)
+    scheduleExpandedIds.value = Array.from(new Set([schedule.id, ...scheduleExpandedIds.value]))
     await loadSchedules(true)
   } catch (error) {
     pushToast((error as Error).message, 'error')
@@ -1468,6 +1580,8 @@ function confirmDeleteSchedule(schedule: NodeCommandScheduleItem) {
     async () => {
       await http.delete(`${CONSOLE_API_BASE}/agent/schedules/${encodeURIComponent(schedule.id)}`)
       pushToast('定时任务已删除', 'success')
+      schedules.value = schedules.value.filter(item => item.id !== schedule.id)
+      scheduleExpandedIds.value = scheduleExpandedIds.value.filter(id => id !== schedule.id)
       if (scheduleForm.value.id === schedule.id) {
         resetScheduleForm()
       }
@@ -1482,11 +1596,49 @@ function confirmToggleSchedule(schedule: NodeCommandScheduleItem, nextValue: boo
     [nextValue ? '启用后会按设定时间自动下发节点操作' : '停用后不会继续自动下发节点操作', schedule.name],
     nextValue ? '确认启用' : '确认停用',
     async () => {
-      await http.patch(`${CONSOLE_API_BASE}/agent/schedules/${encodeURIComponent(schedule.id)}`, {
+      const { data } = await http.patch(`${CONSOLE_API_BASE}/agent/schedules/${encodeURIComponent(schedule.id)}`, {
         isActive: nextValue,
       })
       pushToast(nextValue ? '定时任务已启用' : '定时任务已停用', 'success')
+      upsertScheduleLocally(data.schedule)
       await loadSchedules(true)
+    },
+  )
+}
+
+function requestCommandCancellation(command: NodeCommandItem, force = false) {
+  const actionLabel = force ? '强制终止' : '终止'
+  const controlState = commandControlState(command)
+  const lines = [
+    `${commandActionText(command.commandType)} · ${command.node?.name || command.nodeId}`,
+    `目标: ${commandTargetText(command)}`,
+    force
+      ? '会向 Agent 发送强制终止请求，适用于 steamcmd / 监控这类长任务。'
+      : '会向 Agent 发送终止请求，正在排队的命令会直接取消。',
+  ]
+
+  if (controlState.requestedAt) {
+    lines.push(`当前已在 ${formatDateTime(controlState.requestedAt)} 请求过一次终止`)
+  }
+
+  openConfirmDialog(
+    `确认${actionLabel}命令`,
+    lines,
+    `确认${actionLabel}`,
+    async () => {
+      const { data } = await http.post(`${CONSOLE_API_BASE}/agent/commands/${encodeURIComponent(command.id)}/cancel`, {
+        force,
+      })
+      const nextCommand = data.command as NodeCommandItem
+      mergeActiveCommandRecord(nextCommand)
+      if (props.canViewLogs) {
+        mergeCommandRecord(nextCommand)
+      }
+      pushToast(force ? '已请求强制终止命令' : '已请求终止命令', 'success')
+      await Promise.all([
+        loadActiveCommands(true),
+        props.canViewLogs ? loadCommands(true) : Promise.resolve(),
+      ])
     },
   )
 }
@@ -1584,6 +1736,9 @@ watch(
 watch(
   () => selectedScheduleNodeId.value,
   () => {
+    if (!scheduleForm.value.id && selectedScheduleNodeId.value) {
+      scheduleForm.value.nodeId = selectedScheduleNodeId.value
+    }
     if (props.active) {
       void loadSchedules()
     }
@@ -1866,100 +2021,222 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="agent-command-sections">
-              <section class="agent-command-section agent-command-section--flat">
-                <div class="agent-action-section__header">
-                  <strong>节点选择</strong>
-                  <span>节点操作不会要求你勾选单台服务器, 直接对当前节点执行</span>
-                </div>
-                <NForm label-placement="top" class="console-field-grid cols-2 agent-toolbar-grid">
-                  <NFormItem label="节点">
-                    <NSelect v-model:value="selectedControlNodeId" :options="controlNodeOptions" />
-                  </NFormItem>
-                  <NFormItem label="快速刷新">
-                    <div class="console-inline-actions">
-                      <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">↻</NButton>
+              <ConsoleSegmentedTabs v-model="commandSubTab" :options="commandSubTabOptions" />
+
+              <template v-if="commandSubTab === 'actions'">
+                <section class="agent-command-section agent-command-section--flat">
+                  <div class="agent-action-section__header">
+                    <strong>节点选择</strong>
+                    <span>节点操作不会要求你勾选单台服务器, 直接对当前节点执行</span>
+                  </div>
+                  <NForm label-placement="top" class="console-field-grid cols-2 agent-toolbar-grid">
+                    <NFormItem label="节点">
+                      <NSelect v-model:value="selectedControlNodeId" :options="controlNodeOptions" />
+                    </NFormItem>
+                    <NFormItem label="快速刷新">
+                      <div class="console-inline-actions">
+                        <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">↻</NButton>
+                      </div>
+                    </NFormItem>
+                  </NForm>
+                </section>
+
+                <div class="agent-control-grid">
+                  <section class="agent-command-section">
+                    <div class="agent-action-section__header">
+                      <strong>基础与维护</strong>
+                      <span>把旧脚本里的维护动作收成节点级命令</span>
                     </div>
-                  </NFormItem>
-                </NForm>
-              </section>
+                    <div class="agent-action-grid">
+                      <NButton secondary @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
+                      <NButton secondary @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
+                      <NButton secondary @click="queueNodeInstruction('node.check_update')">检查更新</NButton>
+                      <NButton secondary @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
+                      <NButton secondary @click="queueNodeInstruction('node.check_update_monitor')">更新并崩溃检查</NButton>
+                      <NButton secondary @click="queueNodeInstruction('node.check_update_start')">更新成功后启动</NButton>
+                      <NButton type="error" ghost @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
+                    </div>
+                  </section>
 
-              <div class="agent-control-grid">
+                  <section class="agent-command-section">
+                    <div class="agent-action-section__header">
+                      <strong>版本与监控</strong>
+                      <span>读取版本号, 或单独执行崩溃检查与启动流程</span>
+                    </div>
+                    <div class="agent-action-grid">
+                      <NButton secondary @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
+                      <NButton secondary @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
+                      <NButton secondary @click="queueNodeInstruction('node.monitor_check')">崩溃检查</NButton>
+                      <NButton secondary @click="queueNodeInstruction('node.monitor_start')">崩溃检查后启动</NButton>
+                    </div>
+                    <div class="agent-command-card__summary">
+                      检查更新只比对版本, 不会停服; 验证游戏完整性会立刻停服并执行 validate。
+                    </div>
+                    <div class="agent-command-card__summary">
+                      更新并崩溃检查 / 更新成功后启动 都会先执行 validate, 只有检测到 build 变化时才继续后续流程。
+                    </div>
+                  </section>
+                </div>
+
                 <section class="agent-command-section">
                   <div class="agent-action-section__header">
-                    <strong>基础与维护</strong>
-                    <span>把旧脚本里的维护动作收成节点级命令</span>
+                    <strong>RCON 指令</strong>
+                    <span>支持按分组或按单台服务器下发, 密码从官网服务器目录读取并透传给 Agent</span>
                   </div>
+                  <NForm label-placement="top" class="console-field-grid cols-3">
+                    <NFormItem label="目标类型">
+                      <NSelect
+                        v-model:value="nodeCommandForm.rconTargetMode"
+                        :options="[
+                          { label: '按分组', value: 'group' },
+                          { label: '按服务器', value: 'servers' },
+                        ]"
+                      />
+                    </NFormItem>
+                    <NFormItem v-if="nodeCommandForm.rconTargetMode === 'group'" label="目标分组">
+                      <NSelect v-model:value="nodeCommandForm.rconGroup" :options="nodeInstructionGroupOptions" />
+                    </NFormItem>
+                    <NFormItem v-else label="目标服务器" class="col-span-full">
+                      <NSelect
+                        v-model:value="nodeCommandForm.rconServerKeys"
+                        multiple
+                        clearable
+                        filterable
+                        max-tag-count="responsive"
+                        :options="rconServerOptions"
+                        placeholder="选择一台或多台服务器"
+                      />
+                    </NFormItem>
+                    <NFormItem
+                      label="RCON 指令"
+                      :class="{ 'col-span-full': nodeCommandForm.rconTargetMode === 'servers' }"
+                    >
+                      <NInput
+                        v-model:value="nodeCommandForm.rconCommand"
+                        placeholder="status"
+                        @keydown.enter.prevent="queueManualRconCommand()"
+                      />
+                    </NFormItem>
+                  </NForm>
                   <div class="agent-action-grid">
-                    <NButton secondary @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
-                    <NButton secondary @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.check_update')">检查更新</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.check_update_monitor')">更新并崩溃检查</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.check_update_start')">更新成功后启动</NButton>
-                    <NButton type="error" ghost @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
+                    <NButton type="primary" @click="queueManualRconCommand()">
+                      发送 RCON
+                    </NButton>
                   </div>
                 </section>
+              </template>
 
-                <section class="agent-command-section">
+              <template v-else>
+                <section class="agent-command-section agent-command-section--flat">
                   <div class="agent-action-section__header">
-                    <strong>版本与监控</strong>
-                    <span>读取版本号, 或单独执行崩溃检查与启动流程</span>
+                    <strong>进行中命令</strong>
+                    <span>直接查看运行参数，并支持终止或强制终止当前任务</span>
                   </div>
-                  <div class="agent-action-grid">
-                    <NButton secondary @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.monitor_check')">崩溃检查</NButton>
-                    <NButton secondary @click="queueNodeInstruction('node.monitor_start')">崩溃检查后启动</NButton>
-                  </div>
+                  <NForm label-placement="top" class="console-field-grid cols-3 agent-toolbar-grid">
+                    <NFormItem label="节点筛选">
+                      <NSelect v-model:value="selectedCommandNodeId" :options="commandNodeOptions" />
+                    </NFormItem>
+                    <NFormItem label="统计">
+                      <div class="agent-command-card__summary">
+                        当前筛选下共 {{ visibleActiveCommands.length }} 条待领取 / 已领取 / 运行中的命令
+                      </div>
+                    </NFormItem>
+                    <NFormItem label="刷新">
+                      <div class="console-inline-actions">
+                        <NButton secondary class="console-action-icon" title="刷新进行中命令" @click="loadActiveCommands()">↻</NButton>
+                      </div>
+                    </NFormItem>
+                  </NForm>
                 </section>
-              </div>
 
-              <section class="agent-command-section">
-                <div class="agent-action-section__header">
-                  <strong>RCON 指令</strong>
-                  <span>支持按分组或按单台服务器下发, 密码从官网服务器目录读取并透传给 Agent</span>
+                <div v-if="loadingActiveCommands && !visibleActiveCommands.length" class="hero-note min-h-[220px]">
+                  <NSpin size="large" />
                 </div>
-                <NForm label-placement="top" class="console-field-grid cols-3">
-                  <NFormItem label="目标类型">
-                    <NSelect
-                      v-model:value="nodeCommandForm.rconTargetMode"
-                      :options="[
-                        { label: '按分组', value: 'group' },
-                        { label: '按服务器', value: 'servers' },
-                      ]"
-                    />
-                  </NFormItem>
-                  <NFormItem v-if="nodeCommandForm.rconTargetMode === 'group'" label="目标分组">
-                    <NSelect v-model:value="nodeCommandForm.rconGroup" :options="nodeInstructionGroupOptions" />
-                  </NFormItem>
-                  <NFormItem v-else label="目标服务器" class="col-span-full">
-                    <NSelect
-                      v-model:value="nodeCommandForm.rconServerKeys"
-                      multiple
-                      clearable
-                      filterable
-                      max-tag-count="responsive"
-                      :options="rconServerOptions"
-                      placeholder="选择一台或多台服务器"
-                    />
-                  </NFormItem>
-                  <NFormItem
-                    label="RCON 指令"
-                    :class="{ 'col-span-full': nodeCommandForm.rconTargetMode === 'servers' }"
-                  >
-                    <NInput
-                      v-model:value="nodeCommandForm.rconCommand"
-                      placeholder="status"
-                      @keydown.enter.prevent="queueManualRconCommand()"
-                    />
-                  </NFormItem>
-                </NForm>
-                <div class="agent-action-grid">
-                  <NButton type="primary" @click="queueManualRconCommand()">
-                    发送 RCON
-                  </NButton>
+
+                <div v-else-if="visibleActiveCommands.length" class="agent-command-list">
+                  <article v-for="command in visibleActiveCommands" :key="command.id" class="fold-card agent-command-card">
+                    <button
+                      type="button"
+                      class="fold-card__trigger agent-command-card__trigger"
+                      @click="toggleCommandExpanded(command.id)"
+                    >
+                      <div class="fold-card__title agent-command-card__title">
+                        <strong>{{ commandActionText(command.commandType) }}</strong>
+                        <span>{{ command.node?.name || command.nodeId }} · {{ commandTargetText(command) }}</span>
+                        <span class="agent-command-card__preview">{{ commandSummaryText(command) }}</span>
+                      </div>
+                      <div class="fold-card__meta agent-command-card__meta-head">
+                        <NTag round :type="commandStatusType(command.status)">
+                          {{ command.status }}
+                        </NTag>
+                        <NTag
+                          v-if="commandControlState(command).requestedAt"
+                          round
+                          :type="commandControlState(command).force ? 'error' : 'warning'"
+                        >
+                          {{ commandControlState(command).force ? '已请求强停' : '已请求终止' }}
+                        </NTag>
+                        <span class="fold-card__arrow" :class="{ 'is-open': isCommandExpanded(command.id) }">⌄</span>
+                      </div>
+                    </button>
+
+                    <div v-if="isCommandExpanded(command.id)" class="fold-card__body agent-command-card__body cdk-expand-panel">
+                      <div class="agent-command-card__summary">
+                        {{ commandSummaryText(command) }}
+                      </div>
+
+                      <div class="agent-command-card__meta">
+                        <div>
+                          <span>创建时间</span>
+                          <strong>{{ formatDateTime(command.createdAt) }}</strong>
+                        </div>
+                        <div>
+                          <span>开始时间</span>
+                          <strong>{{ formatDateTime(command.startedAt) }}</strong>
+                        </div>
+                        <div>
+                          <span>下发人</span>
+                          <strong>{{ command.createdBySteamId }}</strong>
+                        </div>
+                        <div>
+                          <span>当前参数</span>
+                          <strong>{{ previewValue(command.payload, '-') }}</strong>
+                        </div>
+                      </div>
+
+                      <div class="agent-command-card__actions">
+                        <NButton secondary @click="openCommandDetails(command)">查看详情</NButton>
+                        <NButton v-if="props.canViewLogs" secondary @click="openLogModal(command)">查看日志</NButton>
+                        <NButton secondary @click="copyText(JSON.stringify(command.payload || {}, null, 2), '命令参数')">
+                          复制参数
+                        </NButton>
+                        <NButton
+                          type="warning"
+                          :disabled="!canGracefullyCancelCommand(command)"
+                          @click="requestCommandCancellation(command, false)"
+                        >
+                          终止
+                        </NButton>
+                        <NButton
+                          type="error"
+                          ghost
+                          :disabled="!canForceCancelCommand(command)"
+                          @click="requestCommandCancellation(command, true)"
+                        >
+                          强制终止
+                        </NButton>
+                      </div>
+                    </div>
+                  </article>
                 </div>
-              </section>
+
+                <div v-else class="hero-note min-h-[220px]">
+                  <div class="hero-note__inner">
+                    <div class="hero-note__title">暂无进行中命令</div>
+                    <div class="hero-note__desc">新下发的批量操作、节点命令或定时命令都会显示在这里</div>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
 

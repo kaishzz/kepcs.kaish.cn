@@ -24,6 +24,13 @@ const NODE_COMMAND_STATUSES = {
   EXPIRED: "EXPIRED",
 };
 
+const FINAL_NODE_COMMAND_STATUSES = new Set([
+  NODE_COMMAND_STATUSES.SUCCEEDED,
+  NODE_COMMAND_STATUSES.FAILED,
+  NODE_COMMAND_STATUSES.CANCELLED,
+  NODE_COMMAND_STATUSES.EXPIRED,
+]);
+
 const ONLINE_WINDOW_MS = 45 * 1000;
 
 function normalizeNodeCode(value, fallback = "") {
@@ -50,6 +57,35 @@ function sanitizeJsonValue(value, fallback = null) {
   } catch (_error) {
     return fallback;
   }
+}
+
+function isPlainRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeNodeCommandResult(currentValue, nextValue) {
+  const current = sanitizeJsonValue(currentValue, null);
+  const next = sanitizeJsonValue(nextValue, null);
+
+  if (!isPlainRecord(current) || !isPlainRecord(next)) {
+    return next ?? current;
+  }
+
+  const currentControl = isPlainRecord(current.control) ? current.control : {};
+  const nextControl = isPlainRecord(next.control) ? next.control : {};
+
+  return {
+    ...current,
+    ...next,
+    ...(Object.keys(currentControl).length || Object.keys(nextControl).length
+      ? {
+          control: {
+            ...currentControl,
+            ...nextControl,
+          },
+        }
+      : {}),
+  };
 }
 
 function currentNodeStatus(row, now = Date.now()) {
@@ -132,6 +168,15 @@ async function findManagedNodeById(id) {
   });
 
   return row ? serializeManagedNode(row) : null;
+}
+
+async function getNodeCommandById(commandId, options = {}) {
+  const row = await cdkPrisma.nodeCommand.findUnique({
+    where: { id: String(commandId) },
+    include: { node: true },
+  });
+
+  return row ? serializeNodeCommand(row, options) : null;
 }
 
 function serializeNodeCommandLog(row) {
@@ -365,6 +410,27 @@ async function markNodeCommandStarted(nodeId, commandId) {
 
 async function finishNodeCommand(nodeId, commandId, payload) {
   const now = new Date();
+  const existing = await cdkPrisma.nodeCommand.findUnique({
+    where: { id: String(commandId) },
+    select: {
+      nodeId: true,
+      result: true,
+      startedAt: true,
+      claimedAt: true,
+    },
+  });
+
+  if (!existing || existing.nodeId !== String(nodeId)) {
+    throw new Error("Command not found");
+  }
+
+  const nextStatus = payload.cancelled
+    ? NODE_COMMAND_STATUSES.CANCELLED
+    : payload.success
+      ? NODE_COMMAND_STATUSES.SUCCEEDED
+      : NODE_COMMAND_STATUSES.FAILED;
+  const mergedResult = mergeNodeCommandResult(existing.result, payload.result);
+
   await cdkPrisma.nodeCommand.updateMany({
     where: {
       id: String(commandId),
@@ -378,11 +444,15 @@ async function finishNodeCommand(nodeId, commandId, payload) {
       },
     },
     data: {
-      status: payload.success ? NODE_COMMAND_STATUSES.SUCCEEDED : NODE_COMMAND_STATUSES.FAILED,
-      startedAt: now,
+      status: nextStatus,
+      startedAt: existing.startedAt || existing.claimedAt || now,
       finishedAt: now,
-      result: sanitizeJsonValue(payload.result, null),
-      errorMessage: payload.success ? null : String(payload.errorMessage || "").trim() || "Command failed",
+      result: mergedResult,
+      errorMessage: payload.cancelled
+        ? String(payload.errorMessage || "").trim() || "Command cancelled"
+        : payload.success
+          ? null
+          : String(payload.errorMessage || "").trim() || "Command failed",
     },
   });
 
@@ -400,6 +470,57 @@ async function finishNodeCommand(nodeId, commandId, payload) {
   });
 
   return serializeNodeCommand(row);
+}
+
+async function requestNodeCommandCancellation(commandId, payload = {}) {
+  const row = await cdkPrisma.nodeCommand.findUnique({
+    where: { id: String(commandId) },
+    include: { node: true },
+  });
+
+  if (!row) {
+    throw new Error("Command not found");
+  }
+
+  if (FINAL_NODE_COMMAND_STATUSES.has(row.status)) {
+    return serializeNodeCommand(row);
+  }
+
+  const now = new Date();
+  const nextResult = mergeNodeCommandResult(row.result, {
+    control: {
+      cancellationRequestedAt: now.toISOString(),
+      cancellationRequestedBySteamId: String(payload.requestedBySteamId || "").trim() || null,
+      cancellationRequestedByRole: String(payload.requestedByRole || "").trim() || null,
+      force: Boolean(payload.force),
+      reason: String(payload.reason || "").trim() || null,
+    },
+  });
+
+  if (row.status === NODE_COMMAND_STATUSES.RUNNING) {
+    const updated = await cdkPrisma.nodeCommand.update({
+      where: { id: String(commandId) },
+      data: {
+        result: nextResult,
+      },
+      include: { node: true },
+    });
+
+    return serializeNodeCommand(updated);
+  }
+
+  const cancelled = await cdkPrisma.nodeCommand.update({
+    where: { id: String(commandId) },
+    data: {
+      status: NODE_COMMAND_STATUSES.CANCELLED,
+      finishedAt: now,
+      result: nextResult,
+      errorMessage: String(payload.reason || "").trim() || "Command cancelled by operator",
+    },
+    include: { node: true },
+  });
+
+  return serializeNodeCommand(cancelled);
 }
 
 async function appendNodeCommandLogs(nodeId, commandId, logs) {
@@ -469,12 +590,25 @@ async function createNodeCommand(payload) {
   return serializeNodeCommand(row);
 }
 
-async function listNodeCommands({ nodeId, status, limit = 100 } = {}) {
+async function listNodeCommands({ nodeId, status, statuses, limit = 100 } = {}) {
   const safeLimit = Math.max(1, Math.min(200, Number(limit) || 100));
+  const safeStatuses = Array.isArray(statuses)
+    ? Array.from(
+        new Set(
+          statuses
+            .map((item) => String(item || "").trim())
+            .filter(Boolean),
+        ),
+      )
+    : [];
   const rows = await cdkPrisma.nodeCommand.findMany({
     where: {
       nodeId: nodeId ? String(nodeId) : undefined,
-      status: status ? String(status) : undefined,
+      status: safeStatuses.length
+        ? { in: safeStatuses }
+        : status
+          ? String(status)
+          : undefined,
     },
     orderBy: [{ createdAt: "desc" }],
     take: safeLimit,
@@ -509,11 +643,13 @@ module.exports = {
   findManagedNodeByApiKeyFromHeaders,
   findManagedNodeById,
   finishNodeCommand,
+  getNodeCommandById,
   listManagedNodes,
   listNodeCommandLogs,
   listNodeCommands,
   markNodeCommandStarted,
   recordManagedNodeHeartbeat,
+  requestNodeCommandCancellation,
   rotateManagedNodeApiKey,
   serializeManagedNode,
   serializeNodeCommand,
