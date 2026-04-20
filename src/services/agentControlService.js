@@ -523,6 +523,38 @@ async function requestNodeCommandCancellation(commandId, payload = {}) {
   return serializeNodeCommand(cancelled);
 }
 
+async function requestNodeCommandCancellationBatch(commandIds, payload = {}) {
+  const ids = Array.from(
+    new Set(
+      (Array.isArray(commandIds) ? commandIds : [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const commands = [];
+  const missingIds = [];
+
+  for (const commandId of ids) {
+    try {
+      commands.push(await requestNodeCommandCancellation(commandId, payload));
+    } catch (error) {
+      if (error?.message === "Command not found") {
+        missingIds.push(commandId);
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  return {
+    commands,
+    missingIds,
+    requestedCount: ids.length,
+    affectedCount: commands.length,
+  };
+}
+
 async function appendNodeCommandLogs(nodeId, commandId, logs) {
   const command = await cdkPrisma.nodeCommand.findUnique({
     where: { id: String(commandId) },
@@ -648,8 +680,10 @@ module.exports = {
   listNodeCommandLogs,
   listNodeCommands,
   markNodeCommandStarted,
+  currentNodeStatus,
   recordManagedNodeHeartbeat,
   requestNodeCommandCancellation,
+  requestNodeCommandCancellationBatch,
   rotateManagedNodeApiKey,
   serializeManagedNode,
   serializeNodeCommand,

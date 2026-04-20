@@ -13,6 +13,7 @@ const { ensureRedisConnected } = require("./lib/redis");
 const {
   clearSessionUser,
   getSessionUser,
+  hasPermission,
   requireAnyPermission,
   requirePermission,
   requireUser,
@@ -80,6 +81,7 @@ const {
   markNodeCommandStarted,
   recordManagedNodeHeartbeat,
   requestNodeCommandCancellation,
+  requestNodeCommandCancellationBatch,
   rotateManagedNodeApiKey,
   serializeManagedNode,
   updateManagedNode,
@@ -87,6 +89,7 @@ const {
 const {
   createNodeSchedule,
   deleteNodeSchedule,
+  getNodeScheduleById,
   listNodeSchedules,
   updateNodeSchedule,
 } = require("./services/nodeScheduleService");
@@ -989,6 +992,10 @@ const commandCancellationSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+const batchCommandCancellationSchema = commandCancellationSchema.extend({
+  ids: z.array(z.string().trim().min(1)).min(1, "至少选择一条命令").max(100, "一次最多处理 100 条命令"),
+});
+
 function buildSessionKey(secret) {
   return crypto.createHash("sha256").update(String(secret)).digest();
 }
@@ -1101,6 +1108,37 @@ function sanitizeServerCatalogAuditDetail(payload = {}) {
 
 function sanitizeAgentCommandAuditDetail(payload = {}) {
   return sanitizeNodeCommandPayload(payload);
+}
+
+const AGENT_CONTROL_COMMAND_TYPES = new Set([
+  "docker.start_group",
+  "docker.stop_group",
+  "docker.restart_group",
+  "docker.start_server",
+  "docker.stop_server",
+  "docker.restart_server",
+  "docker.remove_server",
+]);
+
+function isNodeRconCommandType(commandType) {
+  return String(commandType || "").trim() === "node.rcon_command";
+}
+
+function resolveAgentCommandPermissionKey(commandType) {
+  if (isNodeRconCommandType(commandType)) {
+    return "console.agents.rcon";
+  }
+
+  return AGENT_CONTROL_COMMAND_TYPES.has(String(commandType || "").trim())
+    ? "console.agents.control"
+    : "console.agents.commands";
+}
+
+function sendConsolePermissionDenied(reply) {
+  return reply.code(403).send({
+    success: false,
+    message: "当前账号没有访问该页面的权限。",
+  });
 }
 
 function normalizeRconTargetMode(value) {
@@ -2612,7 +2650,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/agent/nodes", { preHandler: [requireAnyPermission(["console.agents.nodes", "console.agents.control", "console.agents.commands", "console.agents.schedules"]), queryRateLimit] }, async (_request, reply) => {
+  app.get("/console/api/agent/nodes", { preHandler: [requireAnyPermission(["console.agents.nodes", "console.agents.control", "console.agents.commands", "console.agents.rcon", "console.agents.schedules"]), queryRateLimit] }, async (_request, reply) => {
     const nodes = await listManagedNodes();
     return reply.send({ success: true, nodes });
   });
@@ -2771,11 +2809,52 @@ async function createFastifyApp() {
     }
   });
 
+  app.post("/console/api/agent/commands/batch-cancel", { preHandler: [requirePermission("console.agents.commands"), adminWriteRateLimit] }, async (request, reply) => {
+    try {
+      const payload = batchCommandCancellationSchema.parse(request.body || {});
+      const user = getSessionUser(request);
+      const result = await requestNodeCommandCancellationBatch(payload.ids, {
+        force: payload.force,
+        reason: payload.reason,
+        requestedBySteamId: user.steamId,
+        requestedByRole: user.role,
+      });
+
+      await writeAuditLog({
+        actorSteamId: user.steamId,
+        actorRole: user.role,
+        action: payload.force ? "agent.command.batch_force_cancel" : "agent.command.batch_cancel",
+        targetType: "agent-command",
+        targetId: "batch",
+        detail: {
+          ids: payload.ids,
+          force: payload.force,
+          reason: payload.reason || null,
+          requestedCount: result.requestedCount,
+          affectedCount: result.affectedCount,
+          missingIds: result.missingIds,
+        },
+      });
+
+      return reply.send({ success: true, result });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return sendValidationError(reply, error, "批量取消参数错误");
+      }
+
+      throw error;
+    }
+  });
+
   app.get("/console/api/agent/schedules", { preHandler: [requirePermission("console.agents.schedules"), queryRateLimit] }, async (request, reply) => {
     try {
       const payload = nodeScheduleQuerySchema.parse(request.query || {});
+      const user = getSessionUser(request);
       const schedules = await listNodeSchedules(payload);
-      return reply.send({ success: true, schedules });
+      const visibleSchedules = hasPermission(user, "console.agents.rcon")
+        ? schedules
+        : schedules.filter((schedule) => !isNodeRconCommandType(schedule.commandType));
+      return reply.send({ success: true, schedules: visibleSchedules });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return sendValidationError(reply, error, "定时任务查询参数错误");
@@ -2789,6 +2868,11 @@ async function createFastifyApp() {
     try {
       const payload = nodeScheduleCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);
+
+      if (isNodeRconCommandType(payload.commandType) && !hasPermission(user, "console.agents.rcon")) {
+        return sendConsolePermissionDenied(reply);
+      }
+
       const schedule = await createNodeSchedule({
         ...payload,
         createdBySteamId: user.steamId,
@@ -2817,6 +2901,23 @@ async function createFastifyApp() {
     try {
       const payload = nodeScheduleUpdateSchema.parse(request.body || {});
       const user = getSessionUser(request);
+      const existingSchedule = await getNodeScheduleById(request.params.id);
+
+      if (!existingSchedule) {
+        return sendNotFoundError(reply, "定时任务不存在");
+      }
+
+      const nextCommandType = Object.prototype.hasOwnProperty.call(payload, "commandType")
+        ? payload.commandType
+        : existingSchedule.commandType;
+
+      if (
+        (isNodeRconCommandType(existingSchedule.commandType) || isNodeRconCommandType(nextCommandType))
+        && !hasPermission(user, "console.agents.rcon")
+      ) {
+        return sendConsolePermissionDenied(reply);
+      }
+
       const schedule = await updateNodeSchedule(request.params.id, payload);
 
       await writeAuditLog({
@@ -2845,6 +2946,16 @@ async function createFastifyApp() {
   app.delete("/console/api/agent/schedules/:id", { preHandler: [requirePermission("console.agents.schedules"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const user = getSessionUser(request);
+      const existingSchedule = await getNodeScheduleById(request.params.id);
+
+      if (!existingSchedule) {
+        return sendNotFoundError(reply, "定时任务不存在");
+      }
+
+      if (isNodeRconCommandType(existingSchedule.commandType) && !hasPermission(user, "console.agents.rcon")) {
+        return sendConsolePermissionDenied(reply);
+      }
+
       await deleteNodeSchedule(request.params.id);
 
       await writeAuditLog({
@@ -2970,10 +3081,16 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/agent/nodes/:id/commands", { preHandler: [requirePermission("console.agents.control"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/agent/nodes/:id/commands", { preHandler: [requireAnyPermission(["console.agents.control", "console.agents.commands", "console.agents.rcon"]), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = managedNodeCommandCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);
+      const requiredPermissionKey = resolveAgentCommandPermissionKey(payload.commandType);
+
+      if (!hasPermission(user, requiredPermissionKey)) {
+        return sendConsolePermissionDenied(reply);
+      }
+
       const normalizedCommandPayload = payload.commandType === "node.rcon_command"
         ? await resolveNodeRconCommandPayload(request.params.id, payload.payload)
         : payload.payload;

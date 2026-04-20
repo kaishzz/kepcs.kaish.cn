@@ -72,7 +72,14 @@ const CONSOLE_PERMISSION_CATALOG = [
   {
     key: "console.agents.commands",
     label: "服务器控制 · 节点操作",
-    description: "执行节点级维护命令与 RCON 指令",
+    description: "执行节点级维护命令并管理进行中命令",
+    section: "服务器控制",
+    editable: true,
+  },
+  {
+    key: "console.agents.rcon",
+    label: "服务器控制 · RCON 操作",
+    description: "执行 RCON 指令并管理 RCON 定时任务",
     section: "服务器控制",
     editable: true,
   },

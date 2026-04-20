@@ -341,18 +341,21 @@ const canViewAdminTools = computed(() =>
 const canViewAgentNodes = computed(() => hasConsolePermission('console.agents.nodes'))
 const canViewAgentControl = computed(() => hasConsolePermission('console.agents.control'))
 const canViewAgentCommands = computed(() => hasConsolePermission('console.agents.commands'))
+const canViewAgentRcon = computed(() => hasConsolePermission('console.agents.rcon'))
 const canViewAgentSchedules = computed(() => hasConsolePermission('console.agents.schedules'))
 const canViewAgentLogs = computed(() => hasConsolePermission('console.agents.logs'))
 const canViewNodeOverview = computed(() =>
   canViewAgentNodes.value
   || canViewAgentControl.value
   || canViewAgentCommands.value
+  || canViewAgentRcon.value
   || canViewAgentSchedules.value,
 )
 const canViewAgentTab = computed(() =>
   canViewAgentNodes.value
   || canViewAgentControl.value
   || canViewAgentCommands.value
+  || canViewAgentRcon.value
   || canViewAgentSchedules.value
   || canViewAgentLogs.value,
 )
@@ -3023,6 +3026,7 @@ onBeforeUnmount(() => {
               :can-view-nodes="canViewAgentNodes"
               :can-view-control="canViewAgentControl"
               :can-view-commands="canViewAgentCommands"
+              :can-view-rcon="canViewAgentRcon"
               :can-view-schedules="canViewAgentSchedules"
               :can-view-logs="canViewAgentLogs"
             />

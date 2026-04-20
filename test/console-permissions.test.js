@@ -16,6 +16,12 @@ function extractMatches(source, pattern) {
   return Array.from(source.matchAll(pattern), (match) => match[1]).sort();
 }
 
+function extractQuotedMatchesFromGroups(source, outerPattern) {
+  return Array.from(source.matchAll(outerPattern), (match) =>
+    extractMatches(match[1], /"([^"]+)"/g),
+  ).flat().sort();
+}
+
 test("console permission catalog covers frontend and backend usage", () => {
   const frontendSource = readFile("web/src/views/CdkView.vue");
   const backendSource = readFile("src/fastifyApp.js");
@@ -28,8 +34,21 @@ test("console permission catalog covers frontend and backend usage", () => {
     backendSource,
     /requirePermission\("([^"]+)"\)/g,
   );
+  const backendAnyPermissions = extractQuotedMatchesFromGroups(
+    backendSource,
+    /requireAnyPermission\((\[[\s\S]*?\])\)/g,
+  );
+  const backendInlinePermissions = extractMatches(
+    backendSource,
+    /hasPermission\([^,]+,\s*"([^"]+)"\)/g,
+  );
 
-  const usedKeys = Array.from(new Set([...frontendPermissions, ...backendPermissions]));
+  const usedKeys = Array.from(new Set([
+    ...frontendPermissions,
+    ...backendPermissions,
+    ...backendAnyPermissions,
+    ...backendInlinePermissions,
+  ]));
   const catalogKeys = new Set(ALL_CONSOLE_PERMISSION_KEYS);
   const editableKeys = new Set(CONSOLE_EDITABLE_PERMISSION_KEYS);
 

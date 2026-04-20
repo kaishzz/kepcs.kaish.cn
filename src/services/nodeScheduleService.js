@@ -1,5 +1,10 @@
 const { cdkPrisma } = require("../lib/prisma");
-const { createNodeCommand, serializeManagedNode } = require("./agentControlService");
+const {
+  MANAGED_NODE_STATUSES,
+  createNodeCommand,
+  currentNodeStatus,
+  serializeManagedNode,
+} = require("./agentControlService");
 const { notifyScheduledCommandQueued } = require("./gotifyNotificationService");
 const {
   attachNodePayloadMeta,
@@ -125,6 +130,17 @@ async function listNodeSchedules({ nodeId, isActive } = {}) {
   return rows.map(serializeNodeSchedule);
 }
 
+async function getNodeScheduleById(id) {
+  const row = await cdkPrisma.nodeCommandSchedule.findUnique({
+    where: { id: String(id) },
+    include: {
+      node: true,
+    },
+  });
+
+  return row ? serializeNodeSchedule(row) : null;
+}
+
 async function createNodeSchedule(payload) {
   const scheduleTiming = resolveScheduleTiming(payload);
   const row = await cdkPrisma.nodeCommandSchedule.create({
@@ -238,6 +254,30 @@ async function queueScheduleRun(scheduleRow) {
     now,
     scheduleMeta.scheduleConfig,
   );
+  const nodeStatus = scheduleRow.node
+    ? currentNodeStatus(scheduleRow.node, now.getTime())
+    : MANAGED_NODE_STATUSES.OFFLINE;
+
+  if (nodeStatus !== MANAGED_NODE_STATUSES.ONLINE) {
+    const updated = await cdkPrisma.nodeCommandSchedule.updateMany({
+      where: {
+        id: scheduleRow.id,
+        isActive: true,
+        nextRunAt: scheduleRow.nextRunAt,
+      },
+      data: {
+        nextRunAt,
+      },
+    });
+
+    if (updated.count) {
+      console.warn(
+        `Skipped scheduled node command ${scheduleRow.id} because node ${scheduleRow.nodeId} is ${nodeStatus.toLowerCase()}.`,
+      );
+    }
+
+    return null;
+  }
 
   const updated = await cdkPrisma.nodeCommandSchedule.updateMany({
     where: {
@@ -355,6 +395,7 @@ module.exports = {
   computeNextRunAt,
   createNodeSchedule,
   deleteNodeSchedule,
+  getNodeScheduleById,
   listNodeSchedules,
   runDueNodeSchedules,
   serializeNodeSchedule,

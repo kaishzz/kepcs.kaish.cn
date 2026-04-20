@@ -42,12 +42,14 @@ const props = withDefaults(defineProps<{
   canViewNodes?: boolean
   canViewControl?: boolean
   canViewCommands?: boolean
+  canViewRcon?: boolean
   canViewSchedules?: boolean
   canViewLogs?: boolean
 }>(), {
   canViewNodes: true,
   canViewControl: true,
   canViewCommands: true,
+  canViewRcon: true,
   canViewSchedules: true,
   canViewLogs: true,
 })
@@ -125,12 +127,13 @@ const loadingSchedules = ref(false)
 const savingNode = ref(false)
 const savingSchedule = ref(false)
 const agentPanelTab = ref<'nodes' | 'control' | 'commands' | 'schedules' | 'notifications' | 'logs'>('nodes')
-const commandSubTab = ref<'actions' | 'running'>('actions')
+const commandSubTab = ref<'actions' | 'rcon' | 'running'>('actions')
 const selectedControlNodeId = ref('')
 const selectedCommandNodeId = ref('')
 const selectedScheduleNodeId = ref('')
 const selectedGroup = ref('ALL')
 const selectedServerKeys = ref<string[]>([])
+const selectedActiveCommandIds = ref<string[]>([])
 const selectedCommandStatus = ref<CommandStatusFilter>('ALL')
 const commandLimit = ref(20)
 const commandPage = ref(1)
@@ -234,8 +237,9 @@ const nodeInstructionOptions = [
   { label: '读取最新版本', value: 'node.get_nowver' },
   { label: '崩溃检查', value: 'node.monitor_check' },
   { label: '崩溃检查后启动', value: 'node.monitor_start' },
-  { label: 'RCON 指令', value: 'node.rcon_command' },
 ]
+
+const rconInstructionOption = { label: 'RCON 指令', value: 'node.rcon_command' as const }
 
 const scheduleModeOptions = [
   { label: '每 N 分钟', value: 'interval_minutes' },
@@ -247,26 +251,43 @@ const scheduleModeOptions = [
 const firstAvailableAgentTab = computed(() => {
   if (props.canViewNodes) return 'nodes'
   if (props.canViewControl) return 'control'
-  if (props.canViewCommands) return 'commands'
+  if (props.canViewCommands || props.canViewRcon) return 'commands'
   if (props.canViewSchedules) return 'schedules'
   return 'logs'
+})
+
+const canViewCommandPanel = computed(() => props.canViewCommands || props.canViewRcon)
+
+const firstAvailableCommandSubTab = computed(() => {
+  if (props.canViewCommands) return 'actions' as const
+  if (props.canViewRcon) return 'rcon' as const
+  return 'running' as const
 })
 
 const agentPanelTabOptions = computed(() =>
   [
     props.canViewNodes ? { label: '节点管理', value: 'nodes' } : null,
     props.canViewControl ? { label: '批量操作', value: 'control' } : null,
-    props.canViewCommands ? { label: '节点操作', value: 'commands' } : null,
+    canViewCommandPanel.value ? { label: '节点操作', value: 'commands' } : null,
     props.canViewSchedules ? { label: '定时任务', value: 'schedules' } : null,
     props.canViewSchedules ? { label: '通知管理', value: 'notifications' } : null,
     props.canViewLogs ? { label: '日志管理', value: 'logs' } : null,
   ].filter(Boolean) as Array<{ label: string, value: typeof agentPanelTab.value }>,
 )
 
-const commandSubTabOptions = computed(() => [
-  { label: '维护命令', value: 'actions' as const },
-  { label: `进行中命令 ${activeCommands.value.length}`, value: 'running' as const },
-])
+const commandSubTabOptions = computed(() =>
+  [
+    props.canViewCommands ? { label: '维护命令', value: 'actions' as const } : null,
+    props.canViewRcon ? { label: 'RCON 操作', value: 'rcon' as const } : null,
+    props.canViewCommands ? { label: `进行中命令 ${activeCommands.value.length}`, value: 'running' as const } : null,
+  ].filter(Boolean) as Array<{ label: string, value: typeof commandSubTab.value }>,
+)
+
+const scheduleCommandOptions = computed(() =>
+  props.canViewRcon
+    ? [...nodeInstructionOptions, rconInstructionOption]
+    : nodeInstructionOptions,
+)
 
 const selectedNode = computed(() =>
   nodes.value.find((node) => node.id === selectedControlNodeId.value) || null,
@@ -324,6 +345,10 @@ const visibleActiveCommands = computed(() =>
   selectedCommandNodeId.value
     ? activeCommands.value.filter(command => command.nodeId === selectedCommandNodeId.value)
     : activeCommands.value,
+)
+
+const selectedVisibleActiveCommands = computed(() =>
+  visibleActiveCommands.value.filter((command) => selectedActiveCommandIds.value.includes(command.id)),
 )
 
 const summaryItems = computed(() => {
@@ -869,6 +894,17 @@ function canForceCancelCommand(command: NodeCommandItem) {
 function upsertScheduleLocally(schedule: NodeCommandScheduleItem) {
   const list = schedules.value.filter(item => item.id !== schedule.id)
 
+  if (schedule.commandType === 'node.rcon_command' && !props.canViewRcon) {
+    schedules.value = list.sort((left, right) => {
+      if (left.isActive !== right.isActive) {
+        return left.isActive ? -1 : 1
+      }
+
+      return String(left.nextRunAt || '').localeCompare(String(right.nextRunAt || ''))
+    })
+    return
+  }
+
   if (!selectedScheduleNodeId.value || selectedScheduleNodeId.value === schedule.nodeId) {
     list.push(schedule)
   }
@@ -948,7 +984,7 @@ async function copyText(value: string | null | undefined, label: string) {
 }
 
 async function loadNodes(silent = false) {
-  if (!props.canViewNodes && !props.canViewControl && !props.canViewCommands && !props.canViewSchedules) {
+  if (!props.canViewNodes && !props.canViewControl && !props.canViewCommands && !props.canViewRcon && !props.canViewSchedules) {
     nodes.value = []
     return
   }
@@ -1243,9 +1279,26 @@ function confirmRotateKey(node: ManagedNodeItem) {
 function selectNode(node: ManagedNodeItem) {
   selectedControlNodeId.value = node.id
   selectedCommandNodeId.value = node.id
-  selectedScheduleNodeId.value = node.id
-  scheduleForm.value.nodeId = node.id
-  agentPanelTab.value = 'control'
+  if (!scheduleForm.value.id) {
+    scheduleForm.value.nodeId = node.id
+  }
+
+  if (props.canViewControl) {
+    agentPanelTab.value = 'control'
+    return
+  }
+
+  if (canViewCommandPanel.value) {
+    agentPanelTab.value = 'commands'
+    return
+  }
+
+  if (props.canViewSchedules) {
+    agentPanelTab.value = 'schedules'
+    return
+  }
+
+  agentPanelTab.value = firstAvailableAgentTab.value
 }
 
 function resolveGroupLabel(group: string, node: ManagedNodeItem | null = selectedNode.value) {
@@ -1280,6 +1333,26 @@ function selectAllFilteredServers() {
 
 function clearSelectedServers() {
   selectedServerKeys.value = []
+}
+
+function isActiveCommandSelected(commandId: string) {
+  return selectedActiveCommandIds.value.includes(commandId)
+}
+
+function toggleActiveCommandSelection(commandId: string, checked?: boolean) {
+  const nextChecked = checked ?? !isActiveCommandSelected(commandId)
+
+  selectedActiveCommandIds.value = nextChecked
+    ? Array.from(new Set([...selectedActiveCommandIds.value, commandId]))
+    : selectedActiveCommandIds.value.filter((item) => item !== commandId)
+}
+
+function selectAllVisibleActiveCommands() {
+  selectedActiveCommandIds.value = visibleActiveCommands.value.map((command) => command.id)
+}
+
+function clearSelectedActiveCommands() {
+  selectedActiveCommandIds.value = []
 }
 
 function requireSelectedNode() {
@@ -1560,7 +1633,6 @@ async function saveSchedule() {
       pushToast('定时任务已创建', 'success')
     }
 
-    selectedScheduleNodeId.value = schedule.nodeId
     upsertScheduleLocally(schedule)
     fillScheduleForm(schedule)
     scheduleExpandedIds.value = Array.from(new Set([schedule.id, ...scheduleExpandedIds.value]))
@@ -1643,6 +1715,69 @@ function requestCommandCancellation(command: NodeCommandItem, force = false) {
   )
 }
 
+function requestBatchCommandCancellation(force = false) {
+  const selectedCommands = selectedVisibleActiveCommands.value
+
+  if (!selectedCommands.length) {
+    pushToast('请先选择至少一条进行中命令', 'error')
+    return
+  }
+
+  const actionLabel = force ? '强制终止' : '终止'
+  const lines = [
+    `本次共选择 ${selectedCommands.length} 条进行中命令`,
+    force
+      ? '会向 Agent 批量发送强制终止请求，适用于 steamcmd / 监控这类长任务。'
+      : '会向 Agent 批量发送终止请求，排队中的命令会直接取消。',
+  ]
+
+  if (selectedCommandNodeId.value) {
+    const node = nodes.value.find((item) => item.id === selectedCommandNodeId.value)
+    if (node) {
+      lines.push(`当前节点筛选: ${node.name}`)
+    }
+  }
+
+  openConfirmDialog(
+    `确认批量${actionLabel}命令`,
+    lines,
+    `确认批量${actionLabel}`,
+    async () => {
+      const { data } = await http.post(`${CONSOLE_API_BASE}/agent/commands/batch-cancel`, {
+        ids: selectedCommands.map((command) => command.id),
+        force,
+      })
+
+      const result = data.result || {}
+      const nextCommands = Array.isArray(result.commands) ? result.commands as NodeCommandItem[] : []
+
+      nextCommands.forEach((command) => {
+        mergeActiveCommandRecord(command)
+        if (props.canViewLogs) {
+          mergeCommandRecord(command)
+        }
+      })
+
+      selectedActiveCommandIds.value = selectedActiveCommandIds.value.filter((id) =>
+        !selectedCommands.some((command) => command.id === id),
+      )
+
+      const affectedCount = Number(result.affectedCount || nextCommands.length || 0)
+      pushToast(
+        force
+          ? `已请求强制终止 ${affectedCount} 条命令`
+          : `已请求终止 ${affectedCount} 条命令`,
+        'success',
+      )
+
+      await Promise.all([
+        loadActiveCommands(true),
+        props.canViewLogs ? loadCommands(true) : Promise.resolve(),
+      ])
+    },
+  )
+}
+
 function handleGotifyConfigUpdated(config: GotifyConfig) {
   gotifyChannels.value = Array.isArray(config.channels) ? config.channels : []
 }
@@ -1682,10 +1817,6 @@ watch(
 
     if (selectedScheduleNodeId.value && !list.some((node) => node.id === selectedScheduleNodeId.value)) {
       selectedScheduleNodeId.value = ''
-    }
-
-    if (!selectedScheduleNodeId.value) {
-      selectedScheduleNodeId.value = list[0].id
     }
 
     if (!scheduleForm.value.nodeId) {
@@ -1746,19 +1877,35 @@ watch(
 )
 
 watch(
-  () => [props.canViewNodes, props.canViewControl, props.canViewCommands, props.canViewSchedules, props.canViewLogs, agentPanelTab.value] as const,
+  () => [props.canViewNodes, props.canViewControl, props.canViewCommands, props.canViewRcon, props.canViewSchedules, props.canViewLogs, agentPanelTab.value] as const,
   () => {
     const current = agentPanelTab.value
     const allowed =
       (current === 'nodes' && props.canViewNodes)
       || (current === 'control' && props.canViewControl)
-      || (current === 'commands' && props.canViewCommands)
+      || (current === 'commands' && canViewCommandPanel.value)
       || (current === 'schedules' && props.canViewSchedules)
       || (current === 'notifications' && props.canViewSchedules)
       || (current === 'logs' && props.canViewLogs)
 
     if (!allowed) {
       agentPanelTab.value = firstAvailableAgentTab.value
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [props.canViewCommands, props.canViewRcon, commandSubTab.value] as const,
+  () => {
+    const current = commandSubTab.value
+    const allowed =
+      (current === 'actions' && props.canViewCommands)
+      || (current === 'rcon' && props.canViewRcon)
+      || (current === 'running' && props.canViewCommands)
+
+    if (!allowed) {
+      commandSubTab.value = firstAvailableCommandSubTab.value
     }
   },
   { immediate: true },
@@ -1774,6 +1921,24 @@ watch(
     expandedCommandIds.value = expandedCommandIds.value.filter((id) =>
       list.some((command) => command.id === id),
     )
+  },
+)
+
+watch(
+  () => visibleActiveCommands.value.map((command) => command.id),
+  (visibleIds) => {
+    selectedActiveCommandIds.value = selectedActiveCommandIds.value.filter((id) => visibleIds.includes(id))
+  },
+  { immediate: true },
+)
+
+watch(
+  () => props.canViewRcon,
+  (canViewRcon) => {
+    if (!canViewRcon && scheduleForm.value.commandType === 'node.rcon_command') {
+      scheduleForm.value.commandType = 'node.check_update'
+      scheduleForm.value.rconCommand = ''
+    }
   },
 )
 
@@ -2010,7 +2175,7 @@ onBeforeUnmount(() => {
           </div>
         </ConsolePanelCard>
 
-        <ConsolePanelCard v-else-if="agentPanelTab === 'commands' && props.canViewCommands" title="节点操作" description="集中下发节点维护命令和 RCON 指令，保持统一的命令面板结构。">
+        <ConsolePanelCard v-else-if="agentPanelTab === 'commands' && canViewCommandPanel" title="节点操作" description="把维护命令、RCON 操作和进行中命令拆开管理，避免互相干扰。">
           <div v-if="selectedNode" class="agent-control-stack">
             <div class="agent-selected-node-banner console-panel-banner">
               <div class="console-panel-banner__copy">
@@ -2026,8 +2191,8 @@ onBeforeUnmount(() => {
               <template v-if="commandSubTab === 'actions'">
                 <section class="agent-command-section agent-command-section--flat">
                   <div class="agent-action-section__header">
-                    <strong>节点选择</strong>
-                    <span>节点操作不会要求你勾选单台服务器, 直接对当前节点执行</span>
+                    <strong>维护命令</strong>
+                    <span>节点级维护动作会直接对当前节点执行，不再混入 RCON 操作</span>
                   </div>
                   <NForm label-placement="top" class="console-field-grid cols-2 agent-toolbar-grid">
                     <NFormItem label="节点">
@@ -2077,13 +2242,18 @@ onBeforeUnmount(() => {
                     </div>
                   </section>
                 </div>
+              </template>
 
-                <section class="agent-command-section">
+              <template v-else-if="commandSubTab === 'rcon'">
+                <section class="agent-command-section agent-command-section--flat">
                   <div class="agent-action-section__header">
-                    <strong>RCON 指令</strong>
-                    <span>支持按分组或按单台服务器下发, 密码从官网服务器目录读取并透传给 Agent</span>
+                    <strong>RCON 操作</strong>
+                    <span>支持按分组或按服务器下发，密码从官网服务器目录读取并透传给 Agent</span>
                   </div>
                   <NForm label-placement="top" class="console-field-grid cols-3">
+                    <NFormItem label="节点">
+                      <NSelect v-model:value="selectedControlNodeId" :options="controlNodeOptions" />
+                    </NFormItem>
                     <NFormItem label="目标类型">
                       <NSelect
                         v-model:value="nodeCommandForm.rconTargetMode"
@@ -2092,6 +2262,11 @@ onBeforeUnmount(() => {
                           { label: '按服务器', value: 'servers' },
                         ]"
                       />
+                    </NFormItem>
+                    <NFormItem label="快速刷新">
+                      <div class="console-inline-actions">
+                        <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">↻</NButton>
+                      </div>
                     </NFormItem>
                     <NFormItem v-if="nodeCommandForm.rconTargetMode === 'group'" label="目标分组">
                       <NSelect v-model:value="nodeCommandForm.rconGroup" :options="nodeInstructionGroupOptions" />
@@ -2130,7 +2305,7 @@ onBeforeUnmount(() => {
                 <section class="agent-command-section agent-command-section--flat">
                   <div class="agent-action-section__header">
                     <strong>进行中命令</strong>
-                    <span>直接查看运行参数，并支持终止或强制终止当前任务</span>
+                    <span>支持批量勾选、批量终止和批量强制终止当前任务</span>
                   </div>
                   <NForm label-placement="top" class="console-field-grid cols-3 agent-toolbar-grid">
                     <NFormItem label="节点筛选">
@@ -2147,6 +2322,29 @@ onBeforeUnmount(() => {
                       </div>
                     </NFormItem>
                   </NForm>
+                  <div class="agent-command-card__actions">
+                    <NButton secondary :disabled="!visibleActiveCommands.length" @click="selectAllVisibleActiveCommands()">
+                      全选当前筛选
+                    </NButton>
+                    <NButton secondary :disabled="!selectedActiveCommandIds.length" @click="clearSelectedActiveCommands()">
+                      清空选择
+                    </NButton>
+                    <NButton
+                      type="warning"
+                      :disabled="!selectedVisibleActiveCommands.length"
+                      @click="requestBatchCommandCancellation(false)"
+                    >
+                      批量终止 {{ selectedVisibleActiveCommands.length ? `(${selectedVisibleActiveCommands.length})` : '' }}
+                    </NButton>
+                    <NButton
+                      type="error"
+                      ghost
+                      :disabled="!selectedVisibleActiveCommands.length"
+                      @click="requestBatchCommandCancellation(true)"
+                    >
+                      批量强制终止 {{ selectedVisibleActiveCommands.length ? `(${selectedVisibleActiveCommands.length})` : '' }}
+                    </NButton>
+                  </div>
                 </section>
 
                 <div v-if="loadingActiveCommands && !visibleActiveCommands.length" class="hero-note min-h-[220px]">
@@ -2166,6 +2364,12 @@ onBeforeUnmount(() => {
                         <span class="agent-command-card__preview">{{ commandSummaryText(command) }}</span>
                       </div>
                       <div class="fold-card__meta agent-command-card__meta-head">
+                        <NCheckbox
+                          :checked="isActiveCommandSelected(command.id)"
+                          @mousedown.stop
+                          @click.stop
+                          @update:checked="(checked) => toggleActiveCommandSelection(command.id, checked)"
+                        />
                         <NTag round :type="commandStatusType(command.status)">
                           {{ command.status }}
                         </NTag>
@@ -2233,7 +2437,7 @@ onBeforeUnmount(() => {
                 <div v-else class="hero-note min-h-[220px]">
                   <div class="hero-note__inner">
                     <div class="hero-note__title">暂无进行中命令</div>
-                    <div class="hero-note__desc">新下发的批量操作、节点命令或定时命令都会显示在这里</div>
+                    <div class="hero-note__desc">新下发的批量操作、维护命令或定时命令都会显示在这里</div>
                   </div>
                 </div>
               </template>
@@ -2264,7 +2468,7 @@ onBeforeUnmount(() => {
                   <NSelect v-model:value="scheduleForm.nodeId" :options="scheduleNodeOptions" />
                 </NFormItem>
                 <NFormItem label="命令类型">
-                  <NSelect v-model:value="scheduleForm.commandType" :options="nodeInstructionOptions" />
+                  <NSelect v-model:value="scheduleForm.commandType" :options="scheduleCommandOptions" />
                 </NFormItem>
                 <NFormItem label="执行规则">
                   <NSelect v-model:value="scheduleForm.scheduleMode" :options="scheduleModeOptions" />
