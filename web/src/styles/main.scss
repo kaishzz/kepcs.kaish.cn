@@ -965,6 +965,9 @@ img {
   --n-border-pressed: 1px solid var(--app-button-border-active) !important;
   --n-border-focus: 1px solid var(--app-button-border-hover) !important;
   --n-border-disabled: 1px solid var(--app-button-disabled-border) !important;
+  border: 1px solid var(--app-button-border) !important;
+  background: var(--app-button-bg) !important;
+  color: var(--app-button-text) !important;
   transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease !important;
 }
 
@@ -975,11 +978,35 @@ img {
   box-shadow: none !important;
 }
 
+.n-button:not(.nav-button) :is(.n-button__border, .n-button__state-border) {
+  display: block !important;
+  border-radius: inherit !important;
+  transition: border-color 180ms ease, opacity 180ms ease !important;
+}
+
+.n-button:not(.nav-button) .n-button__border {
+  border: 1px solid var(--app-button-border) !important;
+  opacity: 1 !important;
+}
+
+.n-button:not(.nav-button) .n-button__state-border {
+  border: 1px solid rgba(var(--app-button-glow-rgb), 0.18) !important;
+  opacity: 0 !important;
+}
+
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--disabled:not(.nav-button) {
   background: var(--app-button-disabled-bg) !important;
   border-color: var(--app-button-disabled-border) !important;
   color: var(--app-button-disabled-text) !important;
   box-shadow: none !important;
+}
+
+.n-button.n-button--disabled:not(.nav-button) .n-button__border {
+  border-color: var(--app-button-disabled-border) !important;
+}
+
+.n-button.n-button--disabled:not(.nav-button) .n-button__state-border {
+  opacity: 0 !important;
 }
 
 .n-button:not(.nav-button) :is(.n-button__content, .n-base-icon) {
@@ -993,11 +1020,28 @@ img {
   box-shadow: inset 0 0 0 1px rgba(var(--app-button-glow-rgb), 0.12) !important;
 }
 
+.n-button:not(.nav-button):not(.n-button--disabled):hover .n-button__border {
+  border-color: var(--app-button-border-hover) !important;
+}
+
+.n-button:not(.nav-button):not(.n-button--disabled):hover .n-button__state-border {
+  opacity: 1 !important;
+}
+
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type):not(.nav-button):not(.n-button--disabled):active {
   background: var(--app-button-bg-active) !important;
   border-color: var(--app-button-border-active) !important;
   color: var(--app-button-text-hover) !important;
   box-shadow: inset 0 0 0 1px rgba(var(--app-button-glow-rgb), 0.16) !important;
+}
+
+.n-button:not(.nav-button):not(.n-button--disabled):active .n-button__border {
+  border-color: var(--app-button-border-active) !important;
+}
+
+.n-button:not(.nav-button):not(.n-button--disabled):active .n-button__state-border {
+  opacity: 1 !important;
+  border-color: rgba(var(--app-button-glow-rgb), 0.22) !important;
 }
 
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--ghost:not(.nav-button) {
@@ -1011,24 +1055,6 @@ img {
 
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--ghost:not(.nav-button):not(.n-button--disabled):hover {
   background: var(--app-button-bg-hover) !important;
-}
-
-.n-button.n-button--primary-type:not(.nav-button) {
-  --app-button-glow-rgb: var(--app-button-primary-rgb);
-  --app-button-border-hover: var(--app-button-primary-border-hover);
-  --app-button-border-active: var(--app-button-primary-border-active);
-}
-
-.n-button.n-button--warning-type:not(.nav-button) {
-  --app-button-glow-rgb: var(--app-button-warning-rgb);
-  --app-button-border-hover: var(--app-button-warning-border-hover);
-  --app-button-border-active: var(--app-button-warning-border-active);
-}
-
-.n-button.n-button--error-type:not(.nav-button) {
-  --app-button-glow-rgb: var(--app-button-danger-rgb);
-  --app-button-border-hover: var(--app-button-danger-border-hover);
-  --app-button-border-active: var(--app-button-danger-border-active);
 }
 
 .n-button.console-button-tone--success:not(.nav-button) {

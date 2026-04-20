@@ -100,6 +100,7 @@ export interface AccessPermissionCatalogItem {
   label: string
   description: string
   section: string
+  directoryPath?: string[]
   editable: boolean
 }
 

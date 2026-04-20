@@ -32,7 +32,13 @@ const props = defineProps<{
 
 type PermissionSection = {
   name: string
-  items: AccessPermissionCatalogItem[]
+  directories: Array<{
+    key: string
+    label: string
+    items: Array<AccessPermissionCatalogItem & {
+      secondaryLabel: string
+    }>
+  }>
 }
 
 const loading = ref(false)
@@ -70,18 +76,42 @@ const editableCatalog = computed(() =>
   catalog.value.filter((item) => item.editable !== false && item.key !== 'console.my_cdks'),
 )
 
+function resolvePermissionDirectoryPath(item: AccessPermissionCatalogItem) {
+  const path = Array.isArray(item.directoryPath) ? item.directoryPath.filter(Boolean) : []
+  const mainLabel = path[0] || item.section
+  const directoryLabel = path[1] || item.section
+  const secondaryLabel = path[2] || item.label
+
+  return {
+    mainLabel,
+    directoryLabel,
+    secondaryLabel,
+  }
+}
+
 const permissionSections = computed<PermissionSection[]>(() => {
-  const sectionMap = new Map<string, AccessPermissionCatalogItem[]>()
+  const sectionMap = new Map<string, Map<string, Array<AccessPermissionCatalogItem & { secondaryLabel: string }>>>()
 
   editableCatalog.value.forEach((item) => {
-    const bucket = sectionMap.get(item.section) || []
-    bucket.push(item)
-    sectionMap.set(item.section, bucket)
+    const { mainLabel, directoryLabel, secondaryLabel } = resolvePermissionDirectoryPath(item)
+    const directoryMap = sectionMap.get(mainLabel) || new Map<string, Array<AccessPermissionCatalogItem & { secondaryLabel: string }>>()
+    const bucket = directoryMap.get(directoryLabel) || []
+
+    bucket.push({
+      ...item,
+      secondaryLabel,
+    })
+    directoryMap.set(directoryLabel, bucket)
+    sectionMap.set(mainLabel, directoryMap)
   })
 
-  return Array.from(sectionMap.entries()).map(([name, items]) => ({
+  return Array.from(sectionMap.entries()).map(([name, directoryMap]) => ({
     name,
-    items,
+    directories: Array.from(directoryMap.entries()).map(([label, items]) => ({
+      key: `${name}-${label}`,
+      label,
+      items,
+    })),
   }))
 })
 
@@ -410,8 +440,8 @@ watch(
                 </div>
 
                 <div class="access-entry-card__actions">
-                  <NButton type="warning" @click="openEditGroup(group)">编辑</NButton>
-                  <NButton v-if="!group.isSystem" type="error" ghost @click="confirmDeleteGroup(group)">删除</NButton>
+                  <NButton secondary class="console-button-tone--warning" @click="openEditGroup(group)">编辑</NButton>
+                  <NButton v-if="!group.isSystem" secondary class="console-button-tone--danger" @click="confirmDeleteGroup(group)">删除</NButton>
                 </div>
               </article>
             </div>
@@ -469,8 +499,8 @@ watch(
                 </div>
 
                 <div class="access-entry-card__actions">
-                  <NButton type="warning" @click="openEditDirectUser(user)">编辑</NButton>
-                  <NButton type="error" ghost @click="confirmDeleteDirectUser(user)">删除</NButton>
+                  <NButton secondary class="console-button-tone--warning" @click="openEditDirectUser(user)">编辑</NButton>
+                  <NButton secondary class="console-button-tone--danger" @click="confirmDeleteDirectUser(user)">删除</NButton>
                 </div>
               </article>
             </div>
@@ -515,7 +545,7 @@ watch(
             </div>
             <div class="access-modal-section__actions">
               <NTag round>成员 {{ groupModal.members.filter((item) => item.steamId.trim()).length }}</NTag>
-              <NButton type="primary" @click="addGroupMemberRow">新增成员</NButton>
+              <NButton secondary class="console-button-tone--neutral-strong" @click="addGroupMemberRow">新增成员</NButton>
             </div>
           </div>
 
@@ -523,7 +553,7 @@ watch(
             <div v-for="(member, index) in groupModal.members" :key="`member-${index}`" class="member-editor-row">
               <NInput v-model:value="member.steamId" placeholder="SteamID64" />
               <NInput v-model:value="member.note" placeholder="备注" />
-              <NButton type="error" ghost @click="removeGroupMemberRow(index)">移除</NButton>
+              <NButton secondary class="console-button-tone--danger" @click="removeGroupMemberRow(index)">移除</NButton>
             </div>
           </div>
         </section>
@@ -541,15 +571,34 @@ watch(
             <div class="permission-section-grid">
               <section v-for="section in permissionSections" :key="section.name" class="permission-section-card">
                 <div class="permission-section-card__head">
-                  <div class="permission-section-card__title">{{ section.name }}</div>
-                  <NTag size="small" round>{{ section.items.length }}</NTag>
-                </div>
-                <div class="permission-checkbox-grid">
-                  <div v-for="item in section.items" :key="item.key" class="permission-checkbox-item">
-                    <NCheckbox :value="item.key">
-                      {{ item.label }}
-                    </NCheckbox>
+                  <div>
+                    <div class="permission-section-card__eyebrow">主目录</div>
+                    <div class="permission-section-card__title">{{ section.name }}</div>
                   </div>
+                  <NTag size="small" round>{{ section.directories.reduce((sum, directory) => sum + directory.items.length, 0) }}</NTag>
+                </div>
+
+                <div class="permission-directory-grid">
+                  <section v-for="directory in section.directories" :key="directory.key" class="permission-directory-card">
+                    <div class="permission-directory-card__head">
+                      <div>
+                        <div class="permission-directory-card__eyebrow">一级目录</div>
+                        <div class="permission-directory-card__title">{{ directory.label }}</div>
+                      </div>
+                      <NTag size="small" round>{{ directory.items.length }}</NTag>
+                    </div>
+
+                    <div class="permission-checkbox-grid">
+                      <div v-for="item in directory.items" :key="item.key" class="permission-checkbox-item">
+                        <NCheckbox :value="item.key">
+                          <span class="permission-checkbox-item__copy">
+                            <span class="permission-checkbox-item__title">{{ item.secondaryLabel }}</span>
+                            <span class="permission-checkbox-item__desc">{{ item.description }}</span>
+                          </span>
+                        </NCheckbox>
+                      </div>
+                    </div>
+                  </section>
                 </div>
               </section>
             </div>
@@ -597,15 +646,34 @@ watch(
             <div class="permission-section-grid">
               <section v-for="section in permissionSections" :key="section.name" class="permission-section-card">
                 <div class="permission-section-card__head">
-                  <div class="permission-section-card__title">{{ section.name }}</div>
-                  <NTag size="small" round>{{ section.items.length }}</NTag>
-                </div>
-                <div class="permission-checkbox-grid">
-                  <div v-for="item in section.items" :key="item.key" class="permission-checkbox-item">
-                    <NCheckbox :value="item.key">
-                      {{ item.label }}
-                    </NCheckbox>
+                  <div>
+                    <div class="permission-section-card__eyebrow">主目录</div>
+                    <div class="permission-section-card__title">{{ section.name }}</div>
                   </div>
+                  <NTag size="small" round>{{ section.directories.reduce((sum, directory) => sum + directory.items.length, 0) }}</NTag>
+                </div>
+
+                <div class="permission-directory-grid">
+                  <section v-for="directory in section.directories" :key="directory.key" class="permission-directory-card">
+                    <div class="permission-directory-card__head">
+                      <div>
+                        <div class="permission-directory-card__eyebrow">一级目录</div>
+                        <div class="permission-directory-card__title">{{ directory.label }}</div>
+                      </div>
+                      <NTag size="small" round>{{ directory.items.length }}</NTag>
+                    </div>
+
+                    <div class="permission-checkbox-grid">
+                      <div v-for="item in directory.items" :key="item.key" class="permission-checkbox-item">
+                        <NCheckbox :value="item.key">
+                          <span class="permission-checkbox-item__copy">
+                            <span class="permission-checkbox-item__title">{{ item.secondaryLabel }}</span>
+                            <span class="permission-checkbox-item__desc">{{ item.description }}</span>
+                          </span>
+                        </NCheckbox>
+                      </div>
+                    </div>
+                  </section>
                 </div>
               </section>
             </div>
@@ -654,6 +722,9 @@ watch(
 .permission-section-grid,
 .permission-section-card,
 .permission-section-card__head,
+.permission-directory-grid,
+.permission-directory-card,
+.permission-directory-card__head,
 .permission-checkbox-grid,
 .member-editor-list,
 .confirm-dialog-copy {
@@ -759,8 +830,7 @@ watch(
   font-weight: 700;
 }
 
-.access-entry-card,
-.permission-section-card {
+.access-entry-card {
   padding: 14px 0 0;
   border: 0;
   border-top: 1px solid var(--app-border-soft);
@@ -816,23 +886,60 @@ watch(
   gap: 12px 16px;
 }
 
-.permission-section-card__head {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+.permission-section-card {
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--app-border-soft);
+  border-radius: var(--app-radius-md);
+  background: rgba(255, 255, 255, 0.014);
+}
+
+.permission-section-card__head,
+.permission-directory-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.permission-section-card__eyebrow,
+.permission-directory-card__eyebrow {
+  font-size: 11px;
+  color: var(--app-text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.permission-directory-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.permission-directory-card {
+  gap: 10px;
+  padding: 0;
+}
+
+.permission-directory-card__title {
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .permission-checkbox-grid {
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px 12px;
 }
 
 .permission-checkbox-item {
   min-width: 0;
-  padding: 8px 0;
-  border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 0;
-  background: transparent;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.permission-checkbox-grid > .permission-checkbox-item:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .permission-checkbox-item :deep(.n-checkbox) {
@@ -849,11 +956,27 @@ watch(
 
 .permission-checkbox-item :deep(.n-checkbox__label) {
   display: inline-flex;
-  align-items: center;
   min-width: 0;
   color: var(--app-text-soft);
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+.permission-checkbox-item__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.permission-checkbox-item__title {
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.permission-checkbox-item__desc {
+  color: var(--app-text-muted);
+  font-size: 11px;
+  line-height: 1.65;
 }
 
 .access-permission-empty {
@@ -942,6 +1065,7 @@ watch(
   }
 
   .permission-section-grid,
+  .permission-directory-grid,
   .access-overview-grid,
   .access-entry-card__meta,
   .member-editor-row {

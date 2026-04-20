@@ -82,6 +82,11 @@ type NodeActionType =
   | 'node.monitor_check'
   | 'node.monitor_start'
 
+type MaintenanceCommandType =
+  | 'node.check_update'
+  | 'node.monitor_check'
+  | 'node.monitor_start'
+
 interface ScheduleFormState {
   id: string
   name: string
@@ -128,6 +133,7 @@ const savingNode = ref(false)
 const savingSchedule = ref(false)
 const agentPanelTab = ref<'nodes' | 'control' | 'commands' | 'schedules' | 'notifications' | 'logs'>('nodes')
 const commandSubTab = ref<'actions' | 'rcon' | 'running'>('actions')
+const scheduleSubTab = ref<'edit' | 'list'>('edit')
 const selectedControlNodeId = ref('')
 const selectedCommandNodeId = ref('')
 const selectedScheduleNodeId = ref('')
@@ -286,6 +292,11 @@ const commandSubTabOptions = computed(() =>
   ].filter(Boolean) as Array<{ label: string, value: typeof commandSubTab.value }>,
 )
 
+const scheduleSubTabOptions = [
+  { label: '编辑任务', value: 'edit' as const },
+  { label: '任务列表', value: 'list' as const },
+]
+
 const scheduleCommandOptions = computed(() => {
   return props.canViewRcon
     ? [...nodeInstructionOptions, rconInstructionOption]
@@ -372,6 +383,12 @@ const visibleActiveCommands = computed(() =>
   selectedCommandNodeId.value
     ? activeCommands.value.filter(command => command.nodeId === selectedCommandNodeId.value)
     : activeCommands.value,
+)
+
+const visibleSchedules = computed(() =>
+  selectedScheduleNodeId.value
+    ? schedules.value.filter(schedule => schedule.nodeId === selectedScheduleNodeId.value)
+    : schedules.value,
 )
 
 const selectedVisibleActiveCommands = computed(() =>
@@ -1029,31 +1046,26 @@ function canForceCancelCommand(command: NodeCommandItem) {
   return ['PENDING', 'CLAIMED', 'RUNNING'].includes(command.status) && !commandControlState(command).force
 }
 
-function upsertScheduleLocally(schedule: NodeCommandScheduleItem) {
-  const list = schedules.value.filter(item => item.id !== schedule.id)
-
-  if (schedule.commandType === 'node.rcon_command' && !props.canViewRcon) {
-    schedules.value = list.sort((left, right) => {
-      if (left.isActive !== right.isActive) {
-        return left.isActive ? -1 : 1
-      }
-
-      return String(left.nextRunAt || '').localeCompare(String(right.nextRunAt || ''))
-    })
-    return
-  }
-
-  if (!selectedScheduleNodeId.value || selectedScheduleNodeId.value === schedule.nodeId) {
-    list.push(schedule)
-  }
-
-  schedules.value = list.sort((left, right) => {
+function sortSchedules(list: NodeCommandScheduleItem[]) {
+  return [...list].sort((left, right) => {
     if (left.isActive !== right.isActive) {
       return left.isActive ? -1 : 1
     }
 
     return String(left.nextRunAt || '').localeCompare(String(right.nextRunAt || ''))
   })
+}
+
+function upsertScheduleLocally(schedule: NodeCommandScheduleItem) {
+  const list = schedules.value.filter(item => item.id !== schedule.id)
+
+  if (schedule.commandType === 'node.rcon_command' && !props.canViewRcon) {
+    schedules.value = sortSchedules(list)
+    return
+  }
+
+  list.push(schedule)
+  schedules.value = sortSchedules(list)
 }
 
 function mergeCommandRecord(command: NodeCommandItem) {
@@ -1114,7 +1126,7 @@ function buildMaintenancePayload(commandType: NodeActionType) {
   return payload
 }
 
-function queueMaintenanceCommand(commandType: NodeActionType) {
+function queueMaintenanceCommand(commandType: MaintenanceCommandType) {
   queueNodeInstruction(commandType, buildMaintenancePayload(commandType))
 }
 
@@ -1235,12 +1247,8 @@ async function loadSchedules(silent = false) {
   }
 
   try {
-    const { data } = await http.get(`${CONSOLE_API_BASE}/agent/schedules`, {
-      params: {
-        nodeId: selectedScheduleNodeId.value || undefined,
-      },
-    })
-    schedules.value = data.schedules || []
+    const { data } = await http.get(`${CONSOLE_API_BASE}/agent/schedules`)
+    schedules.value = sortSchedules(data.schedules || [])
   } catch (error) {
     if (!silent) {
       pushToast((error as Error).message, 'error')
@@ -1754,6 +1762,7 @@ async function openLogModal(command: NodeCommandItem) {
 
 function resetScheduleForm() {
   scheduleForm.value = createScheduleForm(selectedScheduleNodeId.value || selectedControlNodeId.value || nodes.value[0]?.id || '')
+  scheduleSubTab.value = 'edit'
 }
 
 function fillScheduleForm(schedule: NodeCommandScheduleItem) {
@@ -1778,6 +1787,7 @@ function fillScheduleForm(schedule: NodeCommandScheduleItem) {
     rconGroup: String(schedule.payload?.group || 'ALL'),
     rconCommand: String(schedule.payload?.command || ''),
   }
+  scheduleSubTab.value = 'edit'
 }
 
 function buildSchedulePayload() {
@@ -1836,8 +1846,10 @@ async function saveSchedule() {
     }
 
     upsertScheduleLocally(schedule)
+    selectedScheduleNodeId.value = schedule.nodeId
     fillScheduleForm(schedule)
     scheduleExpandedIds.value = Array.from(new Set([schedule.id, ...scheduleExpandedIds.value]))
+    scheduleSubTab.value = 'list'
     await loadSchedules(true)
   } catch (error) {
     pushToast((error as Error).message, 'error')
@@ -2083,9 +2095,13 @@ watch(
     if (!scheduleForm.value.id && selectedScheduleNodeId.value) {
       scheduleForm.value.nodeId = selectedScheduleNodeId.value
     }
-    if (props.active) {
-      void loadSchedules()
-    }
+  },
+)
+
+watch(
+  () => visibleSchedules.value.map((schedule) => schedule.id),
+  (visibleIds) => {
+    scheduleExpandedIds.value = scheduleExpandedIds.value.filter((id) => visibleIds.includes(id))
   },
 )
 
@@ -2186,7 +2202,7 @@ onBeforeUnmount(() => {
         <ConsolePanelCard v-if="agentPanelTab === 'nodes' && props.canViewNodes" title="节点管理" description="统一查看节点状态、基础信息和启停配置。">
         <template #header-extra>
           <NSpace size="small">
-            <NButton secondary class="console-action-icon" title="刷新列表" @click="refreshAll()">↻</NButton>
+            <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新列表" @click="refreshAll()">↻</NButton>
             <NButton type="primary" @click="openCreateNodeModal">新增节点</NButton>
           </NSpace>
         </template>
@@ -2242,8 +2258,8 @@ onBeforeUnmount(() => {
 
             <div class="agent-node-card__footer">
               <div class="agent-node-card__actions" @click.stop>
-                <NButton type="warning" @click="openEditNodeModal(node)">编辑</NButton>
-                <NButton type="warning" @click="confirmRotateKey(node)">重置令牌</NButton>
+                  <NButton secondary class="console-button-tone--warning" @click="openEditNodeModal(node)">编辑</NButton>
+                  <NButton secondary class="console-button-tone--warning" @click="confirmRotateKey(node)">重置令牌</NButton>
                 <div class="agent-node-card__switch">
                   <span>{{ node.isActive ? '已启用' : '已停用' }}</span>
                   <NSwitch
@@ -2350,8 +2366,8 @@ onBeforeUnmount(() => {
               </div>
 
               <div v-if="filteredServers.length" class="agent-action-grid">
-                <NButton secondary @click="selectAllFilteredServers">全选当前分组</NButton>
-                <NButton secondary @click="clearSelectedServers">取消勾选</NButton>
+                <NButton secondary class="console-button-tone--neutral-strong" @click="selectAllFilteredServers">全选当前分组</NButton>
+                <NButton secondary class="console-button-tone--neutral-strong" @click="clearSelectedServers">取消勾选</NButton>
               </div>
 
               <div v-if="filteredServers.length" class="agent-server-list">
@@ -2428,7 +2444,7 @@ onBeforeUnmount(() => {
                     </NFormItem>
                     <NFormItem label="快速刷新">
                       <div class="console-inline-actions">
-                        <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">↻</NButton>
+                        <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">↻</NButton>
                       </div>
                     </NFormItem>
                     <NFormItem label="崩溃检查目标" class="col-span-full">
@@ -2520,7 +2536,7 @@ onBeforeUnmount(() => {
                     </NFormItem>
                     <NFormItem label="快速刷新">
                       <div class="console-inline-actions">
-                        <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">↻</NButton>
+                        <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">↻</NButton>
                       </div>
                     </NFormItem>
                     <NFormItem v-if="nodeCommandForm.rconTargetMode === 'group'" label="目标分组">
@@ -2573,27 +2589,28 @@ onBeforeUnmount(() => {
                     </NFormItem>
                     <NFormItem label="刷新">
                       <div class="console-inline-actions">
-                        <NButton secondary class="console-action-icon" title="刷新进行中命令" @click="loadActiveCommands()">↻</NButton>
+                        <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新进行中命令" @click="loadActiveCommands()">↻</NButton>
                       </div>
                     </NFormItem>
                   </NForm>
                   <div class="agent-command-card__actions">
-                    <NButton secondary :disabled="!visibleActiveCommands.length" @click="selectAllVisibleActiveCommands()">
+                    <NButton secondary class="console-button-tone--neutral-strong" :disabled="!visibleActiveCommands.length" @click="selectAllVisibleActiveCommands()">
                       全选当前筛选
                     </NButton>
-                    <NButton secondary :disabled="!selectedActiveCommandIds.length" @click="clearSelectedActiveCommands()">
+                    <NButton secondary class="console-button-tone--neutral-strong" :disabled="!selectedActiveCommandIds.length" @click="clearSelectedActiveCommands()">
                       清空选择
                     </NButton>
                     <NButton
-                      type="warning"
+                      secondary
+                      class="console-button-tone--warning"
                       :disabled="!selectedVisibleActiveCommands.length"
                       @click="requestBatchCommandCancellation(false)"
                     >
                       批量终止 {{ selectedVisibleActiveCommands.length ? `(${selectedVisibleActiveCommands.length})` : '' }}
                     </NButton>
                     <NButton
-                      type="error"
-                      ghost
+                      secondary
+                      class="console-button-tone--danger"
                       :disabled="!selectedVisibleActiveCommands.length"
                       @click="requestBatchCommandCancellation(true)"
                     >
@@ -2670,15 +2687,16 @@ onBeforeUnmount(() => {
                           复制参数
                         </NButton>
                         <NButton
-                          type="warning"
+                          secondary
+                          class="console-button-tone--warning"
                           :disabled="!canGracefullyCancelCommand(command)"
                           @click="requestCommandCancellation(command, false)"
                         >
                           终止
                         </NButton>
                         <NButton
-                          type="error"
-                          ghost
+                          secondary
+                          class="console-button-tone--danger"
                           :disabled="!canForceCancelCommand(command)"
                           @click="requestCommandCancellation(command, true)"
                         >
@@ -2707,227 +2725,233 @@ onBeforeUnmount(() => {
           </div>
         </ConsolePanelCard>
 
-        <ConsolePanelCard v-else-if="agentPanelTab === 'schedules' && props.canViewSchedules" title="定时任务" description="统一维护节点级定时命令、通知渠道和执行频率。">
-          <div class="agent-schedule-layout">
-            <section class="agent-command-section agent-schedule-editor">
-              <div class="agent-action-section__header">
-                <strong>{{ scheduleForm.id ? '编辑定时任务' : '新增定时任务' }}</strong>
-                <span>支持按节点配置每天、每 N 天、每 N 小时窗口等自动执行规则</span>
-              </div>
+        <ConsolePanelCard v-else-if="agentPanelTab === 'schedules' && props.canViewSchedules" title="定时任务" description="把任务编辑和任务列表拆开，创建后列表只做本地筛选，不再因为筛选请求把新任务刷没。">
+          <div class="agent-panel-stack">
+            <ConsoleSegmentedTabs v-model="scheduleSubTab" :options="scheduleSubTabOptions" />
 
-              <NForm label-placement="top" class="console-field-grid cols-2">
-                <NFormItem label="任务名称">
-                  <NInput v-model:value="scheduleForm.name" />
-                </NFormItem>
-                <NFormItem label="节点">
-                  <NSelect v-model:value="scheduleForm.nodeId" :options="scheduleNodeOptions" />
-                </NFormItem>
-                <NFormItem label="命令类型">
-                  <NSelect v-model:value="scheduleForm.commandType" :options="scheduleCommandOptions" />
-                </NFormItem>
-                <NFormItem label="执行规则">
-                  <NSelect v-model:value="scheduleForm.scheduleMode" :options="scheduleModeOptions" />
-                </NFormItem>
-                <NFormItem v-if="scheduleForm.scheduleMode === 'interval_minutes'" label="分钟间隔">
-                  <NInputNumber v-model:value="scheduleForm.scheduleIntervalMinutes" :min="1" :max="10080" :show-button="false" class="w-full" />
-                </NFormItem>
-                <NFormItem v-else-if="scheduleForm.scheduleMode === 'daily'" label="执行时间">
-                  <NInput v-model:value="scheduleForm.scheduleTime" placeholder="03:00" />
-                </NFormItem>
-                <template v-else-if="scheduleForm.scheduleMode === 'every_n_days'">
-                  <NFormItem label="每隔天数">
-                    <NInputNumber v-model:value="scheduleForm.scheduleIntervalDays" :min="1" :max="365" :show-button="false" class="w-full" />
+            <Transition name="console-panel-switch" mode="out-in">
+              <section v-if="scheduleSubTab === 'edit'" key="schedule-edit" class="agent-command-section agent-schedule-editor">
+                <div class="agent-action-section__header">
+                  <strong>{{ scheduleForm.id ? '编辑任务' : '新增任务' }}</strong>
+                  <span>支持按节点配置每天、每 N 天、每 N 小时窗口等自动执行规则</span>
+                </div>
+
+                <NForm label-placement="top" class="console-field-grid cols-2">
+                  <NFormItem label="任务名称">
+                    <NInput v-model:value="scheduleForm.name" />
                   </NFormItem>
-                  <NFormItem label="开始日期">
-                    <NDatePicker v-model:value="scheduleForm.scheduleAnchorDate" type="date" :clearable="false" class="w-full" />
+                  <NFormItem label="节点">
+                    <NSelect v-model:value="scheduleForm.nodeId" :options="scheduleNodeOptions" />
                   </NFormItem>
-                  <NFormItem label="执行时间">
+                  <NFormItem label="命令类型">
+                    <NSelect v-model:value="scheduleForm.commandType" :options="scheduleCommandOptions" />
+                  </NFormItem>
+                  <NFormItem label="执行规则">
+                    <NSelect v-model:value="scheduleForm.scheduleMode" :options="scheduleModeOptions" />
+                  </NFormItem>
+                  <NFormItem v-if="scheduleForm.scheduleMode === 'interval_minutes'" label="分钟间隔">
+                    <NInputNumber v-model:value="scheduleForm.scheduleIntervalMinutes" :min="1" :max="10080" :show-button="false" class="w-full" />
+                  </NFormItem>
+                  <NFormItem v-else-if="scheduleForm.scheduleMode === 'daily'" label="执行时间">
                     <NInput v-model:value="scheduleForm.scheduleTime" placeholder="03:00" />
                   </NFormItem>
-                </template>
-                <template v-else-if="scheduleForm.scheduleMode === 'every_n_hours'">
-                  <NFormItem label="小时间隔">
-                    <NInputNumber v-model:value="scheduleForm.scheduleIntervalHours" :min="1" :max="168" :show-button="false" class="w-full" />
+                  <template v-else-if="scheduleForm.scheduleMode === 'every_n_days'">
+                    <NFormItem label="每隔天数">
+                      <NInputNumber v-model:value="scheduleForm.scheduleIntervalDays" :min="1" :max="365" :show-button="false" class="w-full" />
+                    </NFormItem>
+                    <NFormItem label="开始日期">
+                      <NDatePicker v-model:value="scheduleForm.scheduleAnchorDate" type="date" :clearable="false" class="w-full" />
+                    </NFormItem>
+                    <NFormItem label="执行时间">
+                      <NInput v-model:value="scheduleForm.scheduleTime" placeholder="03:00" />
+                    </NFormItem>
+                  </template>
+                  <template v-else-if="scheduleForm.scheduleMode === 'every_n_hours'">
+                    <NFormItem label="小时间隔">
+                      <NInputNumber v-model:value="scheduleForm.scheduleIntervalHours" :min="1" :max="168" :show-button="false" class="w-full" />
+                    </NFormItem>
+                    <NFormItem label="开始时间">
+                      <NInput v-model:value="scheduleForm.scheduleWindowStart" placeholder="00:00" />
+                    </NFormItem>
+                    <NFormItem label="结束时间">
+                      <NInput v-model:value="scheduleForm.scheduleWindowEnd" placeholder="23:59" />
+                    </NFormItem>
+                  </template>
+                  <NFormItem label="规则预览" class="col-span-full">
+                    <div class="agent-schedule-rule-note">
+                      <strong>{{ scheduleFormSummary }}</strong>
+                      <span>保存后系统会自动计算下次执行时间，无需再手动填写。</span>
+                    </div>
                   </NFormItem>
-                  <NFormItem label="开始时间">
-                    <NInput v-model:value="scheduleForm.scheduleWindowStart" placeholder="00:00" />
+                  <NFormItem label="启用状态">
+                    <NSwitch v-model:value="scheduleForm.isActive" />
                   </NFormItem>
-                  <NFormItem label="结束时间">
-                    <NInput v-model:value="scheduleForm.scheduleWindowEnd" placeholder="23:59" />
+                  <NFormItem label="通知渠道" class="col-span-full">
+                    <NSelect
+                      v-model:value="scheduleForm.notificationChannelKeys"
+                      multiple
+                      clearable
+                      filterable
+                      :options="gotifyChannelOptions"
+                      placeholder="不选择则不推送 Gotify"
+                    />
                   </NFormItem>
-                </template>
-                <NFormItem label="规则预览" class="col-span-full">
-                  <div class="agent-schedule-rule-note">
-                    <strong>{{ scheduleFormSummary }}</strong>
-                    <span>保存后系统会自动计算下次执行时间，无需再手动填写。</span>
-                  </div>
-                </NFormItem>
-                <NFormItem label="启用状态">
-                  <NSwitch v-model:value="scheduleForm.isActive" />
-                </NFormItem>
-                <NFormItem label="通知渠道" class="col-span-full">
-                  <NSelect
-                    v-model:value="scheduleForm.notificationChannelKeys"
-                    multiple
-                    clearable
-                    filterable
-                    :options="gotifyChannelOptions"
-                    placeholder="不选择则不推送 Gotify"
-                  />
-                </NFormItem>
-                <NFormItem
-                  v-if="commandSupportsMonitorServer(scheduleForm.commandType)"
-                  label="崩溃检查目标"
-                  class="col-span-full"
-                >
-                  <NSelect
-                    v-model:value="scheduleForm.monitorServerKey"
-                    clearable
-                    filterable
-                    :options="scheduleMonitorServerOptions"
-                    placeholder="不选则使用 Agent 默认监控服"
-                  />
-                </NFormItem>
-                <NFormItem
-                  v-if="commandSupportsStartTargets(scheduleForm.commandType)"
-                  label="崩溃检查成功后启动"
-                  class="col-span-full"
-                >
-                  <NSelect
-                    v-model:value="scheduleForm.startServerKeys"
-                    multiple
-                    clearable
-                    filterable
-                    max-tag-count="responsive"
-                    :options="scheduleStartServerOptions"
-                    placeholder="不选则默认启动除监控服外的全部服务器"
-                  />
-                </NFormItem>
-                <NFormItem
-                  v-if="commandSupportsMonitorServer(scheduleForm.commandType) || commandSupportsStartTargets(scheduleForm.commandType)"
-                  label="执行说明"
-                  class="col-span-full"
-                >
-                  <div class="agent-schedule-rule-note">
-                    <strong>监控目标和启动目标按当前任务节点保存</strong>
-                    <span>不选择监控目标时回退到 Agent 默认监控服；不选择启动目标时默认启动除监控服外的全部服务器。</span>
-                  </div>
-                </NFormItem>
-                <NFormItem v-if="scheduleForm.commandType === 'node.rcon_command'" label="RCON 目标分组">
-                  <NSelect v-model:value="scheduleForm.rconGroup" :options="scheduleNodeInstructionGroupOptions" />
-                </NFormItem>
-                <NFormItem v-if="scheduleForm.commandType === 'node.rcon_command'" label="RCON 指令">
-                  <NInput v-model:value="scheduleForm.rconCommand" />
-                </NFormItem>
-              </NForm>
-
-              <div class="agent-action-grid">
-                <NButton type="primary" :loading="savingSchedule" @click="saveSchedule">
-                  {{ scheduleForm.id ? '保存修改' : '创建任务' }}
-                </NButton>
-                <NButton secondary @click="resetScheduleForm">清空表单</NButton>
-              </div>
-            </section>
-
-            <section class="agent-command-section agent-schedule-list-panel">
-              <div class="agent-selected-node-banner console-panel-banner">
-                <div class="console-panel-banner__copy">
-                  <strong>任务列表</strong>
-                  <span>查看节点自动执行计划, 可以直接编辑、启停和删除</span>
-                </div>
-                <NButton secondary class="console-action-icon" title="刷新任务" @click="loadSchedules()">↻</NButton>
-              </div>
-
-              <NForm label-placement="top" class="console-field-grid cols-2">
-                <NFormItem label="节点筛选">
-                  <NSelect v-model:value="selectedScheduleNodeId" clearable :options="[{ label: '全部节点', value: '' }, ...scheduleNodeOptions]" />
-                </NFormItem>
-                <NFormItem label="操作">
-                  <div class="console-inline-control">
-                    <NButton type="primary" @click="resetScheduleForm">新建任务</NButton>
-                  </div>
-                </NFormItem>
-              </NForm>
-
-              <div v-if="loadingSchedules && !schedules.length" class="hero-note min-h-[220px]">
-                <NSpin size="large" />
-              </div>
-
-              <div v-else-if="schedules.length" class="agent-command-list">
-                <article v-for="schedule in schedules" :key="schedule.id" class="fold-card agent-command-card">
-                  <button
-                    type="button"
-                    class="fold-card__trigger agent-command-card__trigger"
-                    @click="toggleScheduleExpanded(schedule.id)"
+                  <NFormItem
+                    v-if="commandSupportsMonitorServer(scheduleForm.commandType)"
+                    label="崩溃检查目标"
+                    class="col-span-full"
                   >
-                    <div class="fold-card__title agent-command-card__title">
-                      <strong>{{ schedule.name }}</strong>
-                      <span>{{ schedule.node?.name || schedule.nodeId }} · {{ commandActionText(schedule.commandType) }}</span>
-                      <span class="agent-command-card__preview">{{ schedule.scheduleSummary || `每 ${formatIntervalMinutes(schedule.intervalMinutes)} 执行一次` }} · 下次 {{ formatDateTime(schedule.nextRunAt) }}</span>
+                    <NSelect
+                      v-model:value="scheduleForm.monitorServerKey"
+                      clearable
+                      filterable
+                      :options="scheduleMonitorServerOptions"
+                      placeholder="不选则使用 Agent 默认监控服"
+                    />
+                  </NFormItem>
+                  <NFormItem
+                    v-if="commandSupportsStartTargets(scheduleForm.commandType)"
+                    label="崩溃检查成功后启动"
+                    class="col-span-full"
+                  >
+                    <NSelect
+                      v-model:value="scheduleForm.startServerKeys"
+                      multiple
+                      clearable
+                      filterable
+                      max-tag-count="responsive"
+                      :options="scheduleStartServerOptions"
+                      placeholder="不选则默认启动除监控服外的全部服务器"
+                    />
+                  </NFormItem>
+                  <NFormItem
+                    v-if="commandSupportsMonitorServer(scheduleForm.commandType) || commandSupportsStartTargets(scheduleForm.commandType)"
+                    label="执行说明"
+                    class="col-span-full"
+                  >
+                    <div class="agent-schedule-rule-note">
+                      <strong>监控目标和启动目标按当前任务节点保存</strong>
+                      <span>不选择监控目标时回退到 Agent 默认监控服；不选择启动目标时默认启动除监控服外的全部服务器。</span>
                     </div>
-                    <div class="fold-card__meta agent-command-card__meta-head">
-                      <NTag round :type="schedule.isActive ? 'success' : 'default'">
-                        {{ schedule.isActive ? '已启用' : '已停用' }}
-                      </NTag>
-                      <span class="fold-card__arrow" :class="{ 'is-open': isScheduleExpanded(schedule.id) }">⌄</span>
-                    </div>
-                  </button>
+                  </NFormItem>
+                  <NFormItem v-if="scheduleForm.commandType === 'node.rcon_command'" label="RCON 目标分组">
+                    <NSelect v-model:value="scheduleForm.rconGroup" :options="scheduleNodeInstructionGroupOptions" />
+                  </NFormItem>
+                  <NFormItem v-if="scheduleForm.commandType === 'node.rcon_command'" label="RCON 指令">
+                    <NInput v-model:value="scheduleForm.rconCommand" />
+                  </NFormItem>
+                </NForm>
 
-                  <div v-if="isScheduleExpanded(schedule.id)" class="fold-card__body agent-command-card__body cdk-expand-panel">
-                    <div class="agent-command-card__meta">
-                      <div>
-                        <span>下次执行</span>
-                        <strong>{{ formatDateTime(schedule.nextRunAt) }}</strong>
+                <div class="agent-action-grid">
+                  <NButton secondary class="console-button-tone--neutral-strong" :loading="savingSchedule" @click="saveSchedule">
+                    {{ scheduleForm.id ? '保存修改' : '创建任务' }}
+                  </NButton>
+                  <NButton secondary class="console-button-tone--neutral-strong" @click="resetScheduleForm">清空表单</NButton>
+                </div>
+              </section>
+
+              <section v-else key="schedule-list" class="agent-command-section agent-schedule-list-panel">
+                <div class="agent-selected-node-banner console-panel-banner">
+                  <div class="console-panel-banner__copy">
+                    <strong>任务列表</strong>
+                    <span>查看节点自动执行计划，可以直接编辑、启停和删除</span>
+                  </div>
+                  <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新任务" @click="loadSchedules()">↻</NButton>
+                </div>
+
+                <NForm label-placement="top" class="console-field-grid cols-2">
+                  <NFormItem label="节点筛选">
+                    <NSelect v-model:value="selectedScheduleNodeId" clearable :options="[{ label: '全部节点', value: '' }, ...scheduleNodeOptions]" />
+                  </NFormItem>
+                  <NFormItem label="操作">
+                    <div class="console-inline-control">
+                      <NButton secondary class="console-button-tone--neutral-strong" @click="resetScheduleForm">新建任务</NButton>
+                    </div>
+                  </NFormItem>
+                </NForm>
+
+                <div v-if="loadingSchedules && !schedules.length" class="hero-note min-h-[220px]">
+                  <NSpin size="large" />
+                </div>
+
+                <div v-else-if="visibleSchedules.length" class="agent-command-list">
+                  <article v-for="schedule in visibleSchedules" :key="schedule.id" class="fold-card agent-command-card">
+                    <button
+                      type="button"
+                      class="fold-card__trigger agent-command-card__trigger"
+                      @click="toggleScheduleExpanded(schedule.id)"
+                    >
+                      <div class="fold-card__title agent-command-card__title">
+                        <strong>{{ schedule.name }}</strong>
+                        <span>{{ schedule.node?.name || schedule.nodeId }} · {{ commandActionText(schedule.commandType) }}</span>
+                        <span class="agent-command-card__preview">{{ schedule.scheduleSummary || `每 ${formatIntervalMinutes(schedule.intervalMinutes)} 执行一次` }} · 下次 {{ formatDateTime(schedule.nextRunAt) }}</span>
                       </div>
-                      <div>
-                        <span>最近下发</span>
-                        <strong>{{ formatDateTime(schedule.lastQueuedAt) }}</strong>
+                      <div class="fold-card__meta agent-command-card__meta-head">
+                        <NTag round :type="schedule.isActive ? 'success' : 'default'">
+                          {{ schedule.isActive ? '已启用' : '已停用' }}
+                        </NTag>
+                        <span class="fold-card__arrow" :class="{ 'is-open': isScheduleExpanded(schedule.id) }">⌄</span>
                       </div>
-                      <div>
-                        <span>最近命令</span>
-                        <strong>{{ schedule.lastCommandId || '-' }}</strong>
+                    </button>
+
+                    <div v-if="isScheduleExpanded(schedule.id)" class="fold-card__body agent-command-card__body cdk-expand-panel">
+                      <div class="agent-command-card__meta">
+                        <div>
+                          <span>下次执行</span>
+                          <strong>{{ formatDateTime(schedule.nextRunAt) }}</strong>
+                        </div>
+                        <div>
+                          <span>最近下发</span>
+                          <strong>{{ formatDateTime(schedule.lastQueuedAt) }}</strong>
+                        </div>
+                        <div>
+                          <span>最近命令</span>
+                          <strong>{{ schedule.lastCommandId || '-' }}</strong>
+                        </div>
+                        <div>
+                          <span>创建人</span>
+                          <strong>{{ schedule.createdBySteamId }}</strong>
+                        </div>
                       </div>
-                      <div>
-                        <span>创建人</span>
-                        <strong>{{ schedule.createdBySteamId }}</strong>
+
+                      <div class="agent-command-card__summary">
+                        通知渠道:
+                        {{
+                          schedule.notificationChannelKeys?.length
+                            ? resolveGotifyChannelNames(schedule.notificationChannelKeys).join(' / ')
+                            : '不推送'
+                        }}
+                      </div>
+
+                      <div class="agent-command-card__summary">
+                        执行规则: {{ schedule.scheduleSummary || `每 ${formatIntervalMinutes(schedule.intervalMinutes)} 执行一次` }}
+                      </div>
+
+                      <div v-if="Object.keys(schedule.payload || {}).length" class="agent-command-card__summary">
+                        {{ JSON.stringify(schedule.payload || {}, null, 2) }}
+                      </div>
+
+                      <div class="agent-command-card__actions">
+                        <NButton secondary class="console-button-tone--neutral-strong" @click="fillScheduleForm(schedule)">载入编辑</NButton>
+                        <NButton secondary class="console-button-tone--neutral-strong" @click="confirmToggleSchedule(schedule, !schedule.isActive)">
+                          {{ schedule.isActive ? '停用' : '启用' }}
+                        </NButton>
+                        <NButton secondary class="console-button-tone--danger" @click="confirmDeleteSchedule(schedule)">删除</NButton>
                       </div>
                     </div>
+                  </article>
+                </div>
 
-                    <div class="agent-command-card__summary">
-                      通知渠道:
-                      {{
-                        schedule.notificationChannelKeys?.length
-                          ? resolveGotifyChannelNames(schedule.notificationChannelKeys).join(' / ')
-                          : '不推送'
-                      }}
-                    </div>
-
-                    <div class="agent-command-card__summary">
-                      执行规则: {{ schedule.scheduleSummary || `每 ${formatIntervalMinutes(schedule.intervalMinutes)} 执行一次` }}
-                    </div>
-
-                    <div v-if="Object.keys(schedule.payload || {}).length" class="agent-command-card__summary">
-                      {{ JSON.stringify(schedule.payload || {}, null, 2) }}
-                    </div>
-
-                    <div class="agent-command-card__actions">
-                      <NButton type="warning" @click="fillScheduleForm(schedule)">载入编辑</NButton>
-                      <NButton secondary @click="confirmToggleSchedule(schedule, !schedule.isActive)">
-                        {{ schedule.isActive ? '停用' : '启用' }}
-                      </NButton>
-                      <NButton type="error" ghost @click="confirmDeleteSchedule(schedule)">删除</NButton>
+                <div v-else class="hero-note min-h-[220px]">
+                  <div class="hero-note__inner">
+                    <div class="hero-note__title">暂无定时任务</div>
+                    <div class="hero-note__desc">
+                      {{ selectedScheduleNodeId ? '当前节点下还没有任务，切到“编辑任务”即可新增。' : '创建后会按设定时间自动为节点下发维护命令。' }}
                     </div>
                   </div>
-                </article>
-              </div>
-
-              <div v-else class="hero-note min-h-[220px]">
-                <div class="hero-note__inner">
-                  <div class="hero-note__title">暂无定时任务</div>
-                  <div class="hero-note__desc">创建后会按设定时间自动为节点下发维护命令</div>
                 </div>
-              </div>
-            </section>
+              </section>
+            </Transition>
           </div>
         </ConsolePanelCard>
 
@@ -2938,10 +2962,6 @@ onBeforeUnmount(() => {
         />
 
         <ConsolePanelCard v-else-if="props.canViewLogs" title="日志管理" description="统一查看命令历史、结果摘要与执行日志。">
-          <div class="agent-log-toolbar">
-            <NButton secondary class="console-action-icon" title="刷新日志" @click="refreshAll()">↻</NButton>
-          </div>
-
           <div class="console-subsection agent-log-filter-panel">
             <NForm label-placement="top" class="console-field-grid cols-3">
               <NFormItem label="节点筛选">
@@ -2951,7 +2971,10 @@ onBeforeUnmount(() => {
                 <NSelect v-model:value="selectedCommandStatus" :options="commandStatusOptions" />
               </NFormItem>
               <NFormItem label="显示数量">
-                <NInputNumber v-model:value="commandLimit" :min="10" :max="100" :show-button="false" class="w-full" />
+                <div class="console-inline-control">
+                  <NInputNumber v-model:value="commandLimit" :min="10" :max="100" :show-button="false" class="w-full" />
+                  <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新日志" @click="refreshAll()">↻</NButton>
+                </div>
               </NFormItem>
             </NForm>
           </div>
@@ -3349,8 +3372,7 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
-.agent-command-sections,
-.agent-schedule-layout {
+.agent-command-sections {
   display: grid;
   gap: 16px;
 }
@@ -3375,12 +3397,6 @@ onBeforeUnmount(() => {
 .agent-log-filter-panel,
 .agent-log-history-panel {
   gap: 14px;
-}
-
-.agent-log-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 14px;
 }
 
 .agent-command-section {
@@ -3789,8 +3805,7 @@ onBeforeUnmount(() => {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.agent-command-sections > .agent-command-section:first-child,
-.agent-schedule-layout > .agent-command-section:first-child {
+.agent-command-sections > .agent-command-section:first-child {
   padding-top: 0;
   border-top: 0;
 }
@@ -3850,10 +3865,6 @@ onBeforeUnmount(() => {
     align-items: stretch;
   }
 
-  .agent-schedule-layout {
-    grid-template-columns: minmax(340px, 0.88fr) minmax(0, 1.12fr);
-    align-items: start;
-  }
 }
 
 @media (max-width: 768px) {
@@ -3868,8 +3879,7 @@ onBeforeUnmount(() => {
   .agent-panel-stack,
   .agent-control-stack,
   .agent-action-section,
-  .agent-command-sections,
-  .agent-schedule-layout {
+  .agent-command-sections {
     gap: 12px;
   }
 
@@ -3905,8 +3915,7 @@ onBeforeUnmount(() => {
   .agent-command-card__actions,
   .agent-action-grid,
   .agent-log-item__meta,
-  .agent-selected-node-banner,
-  .agent-log-toolbar {
+  .agent-selected-node-banner {
     flex-direction: column;
   }
 
