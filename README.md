@@ -117,8 +117,6 @@ npm --prefix web run lint
 - `node.rcon_command`
 - `node.check_update`
 - `node.check_validate`
-- `node.check_update_monitor`
-- `node.check_update_start`
 - `node.get_oldver`
 - `node.get_nowver`
 - `node.monitor_check`

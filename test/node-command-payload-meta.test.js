@@ -60,3 +60,15 @@ test("node command payload sanitization keeps target keys and removes rcon secre
     serverKeys: ["xl1", "xl2"],
   });
 });
+
+test("node command payload sanitization normalizes monitor and startup server selections", () => {
+  const payload = sanitizeNodeCommandPayload({
+    monitorServerKey: " ks ",
+    startServerKeys: [" xl1 ", "pt1", "xl1", ""],
+  });
+
+  assert.deepEqual(payload, {
+    monitorServerKey: "ks",
+    startServerKeys: ["xl1", "pt1"],
+  });
+});

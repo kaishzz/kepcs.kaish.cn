@@ -2868,6 +2868,7 @@ async function createFastifyApp() {
     try {
       const payload = nodeScheduleCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);
+      const normalizedSchedulePayload = sanitizeNodeCommandPayload(payload.payload);
 
       if (isNodeRconCommandType(payload.commandType) && !hasPermission(user, "console.agents.rcon")) {
         return sendConsolePermissionDenied(reply);
@@ -2875,6 +2876,7 @@ async function createFastifyApp() {
 
       const schedule = await createNodeSchedule({
         ...payload,
+        payload: normalizedSchedulePayload,
         createdBySteamId: user.steamId,
       });
 
@@ -2884,7 +2886,10 @@ async function createFastifyApp() {
         action: "agent.schedule.create",
         targetType: "agent-schedule",
         targetId: schedule.id,
-        detail: payload,
+        detail: {
+          ...payload,
+          payload: sanitizeAgentCommandAuditDetail(normalizedSchedulePayload),
+        },
       });
 
       return reply.code(201).send({ success: true, schedule });
@@ -2918,7 +2923,14 @@ async function createFastifyApp() {
         return sendConsolePermissionDenied(reply);
       }
 
-      const schedule = await updateNodeSchedule(request.params.id, payload);
+      const normalizedSchedulePayload = Object.prototype.hasOwnProperty.call(payload, "payload")
+        ? sanitizeNodeCommandPayload(payload.payload)
+        : undefined;
+
+      const schedule = await updateNodeSchedule(request.params.id, {
+        ...payload,
+        payload: normalizedSchedulePayload,
+      });
 
       await writeAuditLog({
         actorSteamId: user.steamId,
@@ -2926,7 +2938,12 @@ async function createFastifyApp() {
         action: "agent.schedule.update",
         targetType: "agent-schedule",
         targetId: request.params.id,
-        detail: payload,
+        detail: {
+          ...payload,
+          payload: normalizedSchedulePayload == null
+            ? payload.payload
+            : sanitizeAgentCommandAuditDetail(normalizedSchedulePayload),
+        },
       });
 
       return reply.send({ success: true, schedule });
@@ -3093,7 +3110,7 @@ async function createFastifyApp() {
 
       const normalizedCommandPayload = payload.commandType === "node.rcon_command"
         ? await resolveNodeRconCommandPayload(request.params.id, payload.payload)
-        : payload.payload;
+        : sanitizeNodeCommandPayload(payload.payload);
       const command = await createNodeCommand({
         nodeId: request.params.id,
         commandType: payload.commandType,

@@ -77,8 +77,6 @@ type NodeActionType =
   | 'node.rcon_command'
   | 'node.check_update'
   | 'node.check_validate'
-  | 'node.check_update_monitor'
-  | 'node.check_update_start'
   | 'node.get_oldver'
   | 'node.get_nowver'
   | 'node.monitor_check'
@@ -99,6 +97,8 @@ interface ScheduleFormState {
   scheduleWindowEnd: string
   isActive: boolean
   notificationChannelKeys: string[]
+  monitorServerKey: string
+  startServerKeys: string[]
   rconGroup: string
   rconCommand: string
 }
@@ -146,6 +146,11 @@ const nodeCommandForm = ref({
   rconGroup: 'ALL',
   rconServerKeys: [] as string[],
   rconCommand: '',
+})
+
+const maintenanceCommandForm = ref({
+  monitorServerKey: '',
+  startServerKeys: [] as string[],
 })
 
 const gotifyChannels = ref<GotifyChannelItem[]>([])
@@ -229,15 +234,13 @@ const nodeInstructionOptions = [
   { label: '检查节点连通', value: 'agent.ping' },
   { label: '同步容器列表', value: 'docker.list_servers' },
   { label: '强制清理全部容器', value: 'node.kill_all' },
-  { label: '检查更新（仅比对版本）', value: 'node.check_update' },
-  { label: '验证游戏完整性（立即停服）', value: 'node.check_validate' },
-  { label: '更新并崩溃检查（有更新才继续）', value: 'node.check_update_monitor' },
-  { label: '更新成功后启动（有更新且监控通过）', value: 'node.check_update_start' },
+  { label: '检查更新（有差异才停服）', value: 'node.check_update' },
+  { label: '验证游戏完整性（停服后 validate）', value: 'node.check_validate' },
   { label: '读取当前版本', value: 'node.get_oldver' },
-  { label: '读取最新版本', value: 'node.get_nowver' },
-  { label: '崩溃检查', value: 'node.monitor_check' },
+  { label: '读取最新版本（不停服）', value: 'node.get_nowver' },
+  { label: '崩溃检查（仅运行监控服）', value: 'node.monitor_check' },
   { label: '崩溃检查后启动', value: 'node.monitor_start' },
-]
+] as const
 
 const rconInstructionOption = { label: 'RCON 指令', value: 'node.rcon_command' as const }
 
@@ -283,14 +286,18 @@ const commandSubTabOptions = computed(() =>
   ].filter(Boolean) as Array<{ label: string, value: typeof commandSubTab.value }>,
 )
 
-const scheduleCommandOptions = computed(() =>
-  props.canViewRcon
+const scheduleCommandOptions = computed(() => {
+  return props.canViewRcon
     ? [...nodeInstructionOptions, rconInstructionOption]
-    : nodeInstructionOptions,
-)
+    : [...nodeInstructionOptions]
+})
 
 const selectedNode = computed(() =>
   nodes.value.find((node) => node.id === selectedControlNodeId.value) || null,
+)
+
+const selectedScheduleFormNode = computed(() =>
+  nodes.value.find((node) => node.id === scheduleForm.value.nodeId) || null,
 )
 
 const selectedNodeServers = computed<ManagedNodeHeartbeatServerItem[]>(() => {
@@ -298,18 +305,17 @@ const selectedNodeServers = computed<ManagedNodeHeartbeatServerItem[]>(() => {
   return Array.isArray(servers) ? servers : []
 })
 
-const selectedNodeGroups = computed(() => {
-  const values = new Set<string>()
-  selectedNodeServers.value.forEach((server) => {
-    ;(server.groups || []).forEach((group) => {
-      const safeGroup = String(group || '').trim()
-      if (safeGroup && LOGICAL_GROUPS.includes(safeGroup as typeof LOGICAL_GROUPS[number])) {
-        values.add(safeGroup)
-      }
-    })
-  })
+const selectedScheduleFormServers = computed<ManagedNodeHeartbeatServerItem[]>(() => {
+  const servers = selectedScheduleFormNode.value?.lastHeartbeat?.servers
+  return Array.isArray(servers) ? servers : []
+})
 
-  return Array.from(values).sort((left, right) => left.localeCompare(right, 'zh-CN'))
+const selectedNodeGroups = computed(() => {
+  return resolveLogicalGroups(selectedNodeServers.value)
+})
+
+const selectedScheduleNodeGroups = computed(() => {
+  return resolveLogicalGroups(selectedScheduleFormServers.value)
 })
 
 const groupOptions = computed(() => [
@@ -320,11 +326,32 @@ const groupOptions = computed(() => [
   })),
 ])
 
-const rconServerOptions = computed(() =>
-  selectedNodeServers.value.map((server) => ({
-    label: `${server.key} · ${server.containerName || '未填写容器名'}`,
-    value: server.key,
+const scheduleNodeInstructionGroupOptions = computed(() => [
+  { label: '全部分组', value: 'ALL' },
+  ...selectedScheduleNodeGroups.value.map((group) => ({
+    label: resolveGroupLabel(group, selectedScheduleFormNode.value),
+    value: group,
   })),
+])
+
+const rconServerOptions = computed(() =>
+  buildServerSelectOptions(selectedNodeServers.value),
+)
+
+const maintenanceMonitorServerOptions = computed(() =>
+  buildServerSelectOptions(selectedNodeServers.value),
+)
+
+const maintenanceStartServerOptions = computed(() =>
+  buildServerSelectOptions(selectedNodeServers.value),
+)
+
+const scheduleMonitorServerOptions = computed(() =>
+  buildServerSelectOptions(selectedScheduleFormServers.value),
+)
+
+const scheduleStartServerOptions = computed(() =>
+  buildServerSelectOptions(selectedScheduleFormServers.value),
 )
 
 const filteredServers = computed(() => {
@@ -459,6 +486,8 @@ function createScheduleForm(nodeId = selectedScheduleNodeId.value || selectedCon
     scheduleWindowEnd: '23:59',
     isActive: true,
     notificationChannelKeys: [],
+    monitorServerKey: '',
+    startServerKeys: [],
     rconGroup: 'ALL',
     rconCommand: '',
   }
@@ -663,6 +692,90 @@ function serverImageText(server: ManagedNodeHeartbeatServerItem) {
   return String(image || '-')
 }
 
+const monitorSelectionCommandTypes = [
+  'node.check_update',
+  'node.monitor_check',
+  'node.monitor_start',
+] as const
+
+const startSelectionCommandTypes = [
+  'node.check_update',
+  'node.monitor_start',
+] as const
+
+function resolveLogicalGroups(servers: ManagedNodeHeartbeatServerItem[]) {
+  const values = new Set<string>()
+  servers.forEach((server) => {
+    ;(server.groups || []).forEach((group) => {
+      const safeGroup = String(group || '').trim()
+      if (safeGroup && LOGICAL_GROUPS.includes(safeGroup as typeof LOGICAL_GROUPS[number])) {
+        values.add(safeGroup)
+      }
+    })
+  })
+
+  return Array.from(values).sort((left, right) => left.localeCompare(right, 'zh-CN'))
+}
+
+function buildServerSelectLabel(server: ManagedNodeHeartbeatServerItem) {
+  const parts = [server.key, server.containerName || '未填写容器名']
+  if (typeof server.primaryPort === 'number' && Number.isFinite(server.primaryPort)) {
+    parts.push(`端口 ${server.primaryPort}`)
+  }
+  parts.push(serverStateText(server))
+  return parts.join(' · ')
+}
+
+function buildServerSelectOptions(servers: ManagedNodeHeartbeatServerItem[]) {
+  return servers.map((server) => ({
+    label: buildServerSelectLabel(server),
+    value: server.key,
+  }))
+}
+
+function commandSupportsMonitorServer(commandType: string) {
+  return monitorSelectionCommandTypes.includes(commandType as typeof monitorSelectionCommandTypes[number])
+}
+
+function commandSupportsStartTargets(commandType: string) {
+  return startSelectionCommandTypes.includes(commandType as typeof startSelectionCommandTypes[number])
+}
+
+function normalizeOptionalServerKey(value: unknown) {
+  const safeValue = String(value || '').trim()
+  return safeValue || null
+}
+
+function normalizeSelectedServerKeys(value: unknown) {
+  return normalizeServerKeyList(value)
+}
+
+function resolveServerChoiceLabel(
+  servers: ManagedNodeHeartbeatServerItem[],
+  key: string | null,
+  fallback = 'Agent 默认监控服',
+) {
+  if (!key) {
+    return fallback
+  }
+
+  const server = servers.find((item) => item.key === key)
+  return server ? buildServerSelectLabel(server) : key
+}
+
+function resolveStartTargetsLabel(
+  servers: ManagedNodeHeartbeatServerItem[],
+  keys: string[],
+  fallback = '默认启动除监控服外的全部服务器',
+) {
+  if (!keys.length) {
+    return fallback
+  }
+
+  const labels = keys.map((key) => resolveServerChoiceLabel(servers, key, key))
+  return labels.length <= 2 ? labels.join(' / ') : `${labels.length} 台: ${labels.join(', ')}`
+}
+
 function nodeServerCount(node: ManagedNodeItem) {
   return Array.isArray(node.lastHeartbeat?.servers) ? node.lastHeartbeat?.servers.length || 0 : 0
 }
@@ -719,8 +832,6 @@ function commandActionText(commandType: string) {
   if (commandType === 'node.rcon_command') return 'RCON 指令'
   if (commandType === 'node.check_update') return '检查更新'
   if (commandType === 'node.check_validate') return '验证游戏完整性'
-  if (commandType === 'node.check_update_monitor') return '更新并崩溃检查'
-  if (commandType === 'node.check_update_start') return '更新成功后启动'
   if (commandType === 'node.get_oldver') return '读取当前版本'
   if (commandType === 'node.get_nowver') return '读取最新版本'
   if (commandType === 'node.monitor_check') return '崩溃检查'
@@ -734,6 +845,8 @@ function commandTargetText(command: NodeCommandItem) {
   const key = String(payload.key || '').trim()
   const rconCommand = String(payload.command || '').trim()
   const serverKeys = normalizeServerKeyList(payload.serverKeys || payload.targets)
+  const monitorServerKey = normalizeOptionalServerKey(payload.monitorServerKey)
+  const startServerKeys = normalizeSelectedServerKeys(payload.startServerKeys)
 
   if (command.commandType.includes('_group')) {
     return group ? `分组 ${group}` : '分组'
@@ -753,6 +866,28 @@ function commandTargetText(command: NodeCommandItem) {
     return group && group !== 'ALL'
       ? `分组 ${group} · ${rconCommand || 'RCON'}`
       : (rconCommand ? `全部分组 · ${rconCommand}` : '全部分组')
+  }
+
+  if (
+    command.commandType === 'node.check_update'
+    || command.commandType === 'node.monitor_check'
+    || command.commandType === 'node.monitor_start'
+  ) {
+    const pieces = []
+
+    if (monitorServerKey) {
+      pieces.push(`监控 ${monitorServerKey}`)
+    }
+
+    if (
+      (command.commandType === 'node.check_update'
+        || command.commandType === 'node.monitor_start')
+      && startServerKeys.length
+    ) {
+      pieces.push(`启动 ${startServerKeys.length} 台`)
+    }
+
+    return pieces.length ? pieces.join(' · ') : '节点'
   }
 
   return '节点'
@@ -803,8 +938,6 @@ function commandSummaryText(command: NodeCommandItem) {
   if (
     command.commandType === 'node.check_update'
     || command.commandType === 'node.check_validate'
-    || command.commandType === 'node.check_update_monitor'
-    || command.commandType === 'node.check_update_start'
     || command.commandType === 'node.get_oldver'
     || command.commandType === 'node.get_nowver'
     || command.commandType === 'node.monitor_check'
@@ -820,7 +953,7 @@ function commandSummaryText(command: NodeCommandItem) {
     return result.message.trim()
   }
 
-  const server = normalizeResult(result.server)
+  const server = normalizeResult(result.monitorServer || result.server)
   if (server) {
     return `${String(server.key || '目标服务器')} 当前状态 ${serverStateText(server as unknown as ManagedNodeHeartbeatServerItem)}`
   }
@@ -835,14 +968,19 @@ function resultServerList(command: NodeCommandItem) {
 
 function resultGroupRows(command: NodeCommandItem) {
   const result = normalizeResult(command.result)
-  return Array.isArray(result?.results)
-    ? (result?.results as CommandGroupResultRow[])
+  if (Array.isArray(result?.results)) {
+    return result.results as CommandGroupResultRow[]
+  }
+
+  const startServers = normalizeResult(result?.startServers)
+  return Array.isArray(startServers?.results)
+    ? (startServers.results as CommandGroupResultRow[])
     : []
 }
 
 function resultSingleServer(command: NodeCommandItem) {
   const result = normalizeResult(command.result)
-  const server = normalizeResult(result?.server)
+  const server = normalizeResult(result?.monitorServer || result?.server)
   return server ? (server as unknown as ManagedNodeHeartbeatServerItem) : null
 }
 
@@ -957,6 +1095,27 @@ function buildManualRconPayload() {
     targetMode: 'group' as const,
     group: nodeCommandForm.value.rconGroup,
   }
+}
+
+function buildMaintenancePayload(commandType: NodeActionType) {
+  const payload: Record<string, unknown> = {}
+
+  if (commandSupportsMonitorServer(commandType) && maintenanceCommandForm.value.monitorServerKey) {
+    payload.monitorServerKey = maintenanceCommandForm.value.monitorServerKey
+  }
+
+  if (commandSupportsStartTargets(commandType)) {
+    const startServerKeys = normalizeSelectedServerKeys(maintenanceCommandForm.value.startServerKeys)
+    if (startServerKeys.length) {
+      payload.startServerKeys = startServerKeys
+    }
+  }
+
+  return payload
+}
+
+function queueMaintenanceCommand(commandType: NodeActionType) {
+  queueNodeInstruction(commandType, buildMaintenancePayload(commandType))
 }
 
 function queueManualRconCommand() {
@@ -1442,6 +1601,32 @@ function queueNodeInstruction(commandType: Exclude<NodeActionType, 'docker.start
     lines.push(commandText)
   }
 
+  if (commandSupportsMonitorServer(commandType)) {
+    const monitorServerKey = normalizeOptionalServerKey(payload.monitorServerKey)
+    lines.push(`崩溃检查目标: ${resolveServerChoiceLabel(selectedNodeServers.value, monitorServerKey)}`)
+  }
+
+  if (commandSupportsStartTargets(commandType)) {
+    const startServerKeys = normalizeSelectedServerKeys(payload.startServerKeys)
+    lines.push(`崩溃检查成功后启动: ${resolveStartTargetsLabel(selectedNodeServers.value, startServerKeys)}`)
+  }
+
+  if (commandType === 'node.check_update') {
+    lines.push('流程: 先比较本地与远端版本, 只有检测到差异才会停服并执行 validate。')
+  }
+
+  if (commandType === 'node.check_validate') {
+    lines.push('流程: 立即停服并执行 update validate, 完成后结束。')
+  }
+
+  if (commandType === 'node.get_oldver') {
+    lines.push('流程: 只读取当前节点本地版本, 不停服。')
+  }
+
+  if (commandType === 'node.get_nowver') {
+    lines.push('流程: 只读取远端最新版本, 不停服。')
+  }
+
   queueCommand(
     commandType,
     payload,
@@ -1572,6 +1757,8 @@ function resetScheduleForm() {
 }
 
 function fillScheduleForm(schedule: NodeCommandScheduleItem) {
+  const monitorServerKey = normalizeOptionalServerKey(schedule.payload?.monitorServerKey) || ''
+  const startServerKeys = normalizeSelectedServerKeys(schedule.payload?.startServerKeys)
   const scheduleFields = resolveScheduleFormFields(
     schedule.scheduleConfig,
     schedule.intervalMinutes,
@@ -1586,12 +1773,16 @@ function fillScheduleForm(schedule: NodeCommandScheduleItem) {
     ...scheduleFields,
     isActive: schedule.isActive,
     notificationChannelKeys: Array.isArray(schedule.notificationChannelKeys) ? [...schedule.notificationChannelKeys] : [],
+    monitorServerKey,
+    startServerKeys,
     rconGroup: String(schedule.payload?.group || 'ALL'),
     rconCommand: String(schedule.payload?.command || ''),
   }
 }
 
 function buildSchedulePayload() {
+  const payload: Record<string, unknown> = {}
+
   if (scheduleForm.value.commandType === 'node.rcon_command') {
     const command = scheduleForm.value.rconCommand.trim()
     if (!command) {
@@ -1604,7 +1795,18 @@ function buildSchedulePayload() {
     }
   }
 
-  return {}
+  if (commandSupportsMonitorServer(scheduleForm.value.commandType) && scheduleForm.value.monitorServerKey) {
+    payload.monitorServerKey = scheduleForm.value.monitorServerKey
+  }
+
+  if (commandSupportsStartTargets(scheduleForm.value.commandType)) {
+    const startServerKeys = normalizeSelectedServerKeys(scheduleForm.value.startServerKeys)
+    if (startServerKeys.length) {
+      payload.startServerKeys = startServerKeys
+    }
+  }
+
+  return payload
 }
 
 async function saveSchedule() {
@@ -1819,8 +2021,8 @@ watch(
       selectedScheduleNodeId.value = ''
     }
 
-    if (!scheduleForm.value.nodeId) {
-      scheduleForm.value.nodeId = list[0].id
+    if (!scheduleForm.value.nodeId || !list.some((node) => node.id === scheduleForm.value.nodeId)) {
+      scheduleForm.value.nodeId = selectedScheduleNodeId.value || list[0].id
     }
   },
   { immediate: true },
@@ -1832,6 +2034,8 @@ watch(
     selectedGroup.value = 'ALL'
     selectedServerKeys.value = []
     nodeCommandForm.value.rconServerKeys = []
+    maintenanceCommandForm.value.monitorServerKey = ''
+    maintenanceCommandForm.value.startServerKeys = []
   },
 )
 
@@ -1848,6 +2052,15 @@ watch(
   () => selectedNodeServers.value,
   () => {
     nodeCommandForm.value.rconServerKeys = nodeCommandForm.value.rconServerKeys.filter((key) =>
+      selectedNodeServers.value.some((server) => server.key === key),
+    )
+    if (
+      maintenanceCommandForm.value.monitorServerKey
+      && !selectedNodeServers.value.some((server) => server.key === maintenanceCommandForm.value.monitorServerKey)
+    ) {
+      maintenanceCommandForm.value.monitorServerKey = ''
+    }
+    maintenanceCommandForm.value.startServerKeys = maintenanceCommandForm.value.startServerKeys.filter((key) =>
       selectedNodeServers.value.some((server) => server.key === key),
     )
   },
@@ -1873,6 +2086,21 @@ watch(
     if (props.active) {
       void loadSchedules()
     }
+  },
+)
+
+watch(
+  () => selectedScheduleFormServers.value,
+  () => {
+    if (
+      scheduleForm.value.monitorServerKey
+      && !selectedScheduleFormServers.value.some((server) => server.key === scheduleForm.value.monitorServerKey)
+    ) {
+      scheduleForm.value.monitorServerKey = ''
+    }
+    scheduleForm.value.startServerKeys = scheduleForm.value.startServerKeys.filter((key) =>
+      selectedScheduleFormServers.value.some((server) => server.key === key),
+    )
   },
 )
 
@@ -2203,7 +2431,33 @@ onBeforeUnmount(() => {
                         <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">↻</NButton>
                       </div>
                     </NFormItem>
+                    <NFormItem label="崩溃检查目标" class="col-span-full">
+                      <NSelect
+                        v-model:value="maintenanceCommandForm.monitorServerKey"
+                        clearable
+                        filterable
+                        :options="maintenanceMonitorServerOptions"
+                        placeholder="不选则使用 Agent 默认监控服"
+                      />
+                    </NFormItem>
+                    <NFormItem label="崩溃检查成功后启动" class="col-span-full">
+                      <NSelect
+                        v-model:value="maintenanceCommandForm.startServerKeys"
+                        multiple
+                        clearable
+                        filterable
+                        max-tag-count="responsive"
+                        :options="maintenanceStartServerOptions"
+                        placeholder="不选则默认启动除监控服外的全部服务器"
+                      />
+                    </NFormItem>
                   </NForm>
+                  <div class="agent-command-card__summary">
+                    检查更新 / 崩溃检查 / 崩溃检查后启动会读取这里的监控目标；不选监控目标时回退到 Agent 默认配置。
+                  </div>
+                  <div class="agent-command-card__summary">
+                    需要“崩溃检查成功后启动”时，可以在这里多选要启动的服务器；不选则默认启动除监控服外的全部服务器。
+                  </div>
                 </section>
 
                 <div class="agent-control-grid">
@@ -2215,10 +2469,8 @@ onBeforeUnmount(() => {
                     <div class="agent-action-grid">
                       <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
                       <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
-                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.check_update')">检查更新</NButton>
+                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueMaintenanceCommand('node.check_update')">检查更新</NButton>
                       <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
-                      <NButton secondary class="console-button-tone--warning" @click="queueNodeInstruction('node.check_update_monitor')">更新并崩溃检查</NButton>
-                      <NButton secondary class="console-button-tone--success" @click="queueNodeInstruction('node.check_update_start')">更新成功后启动</NButton>
                       <NButton type="error" ghost class="console-button-tone--danger" @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
                     </div>
                   </section>
@@ -2231,14 +2483,17 @@ onBeforeUnmount(() => {
                     <div class="agent-action-grid">
                       <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
                       <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
-                      <NButton secondary class="console-button-tone--warning" @click="queueNodeInstruction('node.monitor_check')">崩溃检查</NButton>
-                      <NButton secondary class="console-button-tone--success" @click="queueNodeInstruction('node.monitor_start')">崩溃检查后启动</NButton>
+                      <NButton secondary class="console-button-tone--warning" @click="queueMaintenanceCommand('node.monitor_check')">崩溃检查</NButton>
+                      <NButton secondary class="console-button-tone--success" @click="queueMaintenanceCommand('node.monitor_start')">崩溃检查后启动</NButton>
                     </div>
                     <div class="agent-command-card__summary">
-                      检查更新只比对版本, 不会停服。
+                      读取当前版本 / 读取最新版本都不会停服；读取最新版本只会读取远端 buildid。
                     </div>
                     <div class="agent-command-card__summary">
-                      当前没有“先只检查版本, 发现差异才停服”的单独按钮; 验证游戏完整性 / 更新并崩溃检查 / 更新成功后启动都会立刻执行 validate 并停服, 只是后两者只有 build 变化后才继续后续流程。
+                      检查更新会先比较版本, 只有存在差异时才会停服、执行 validate、跑崩溃检查，并在检查成功后启动你选中的服务器。
+                    </div>
+                    <div class="agent-command-card__summary">
+                      崩溃检查会直接重建并启动所选监控容器，只返回是否崩溃；崩溃检查后启动会在成功后再启动后续服务器。
                     </div>
                   </section>
                 </div>
@@ -2520,8 +2775,46 @@ onBeforeUnmount(() => {
                     placeholder="不选择则不推送 Gotify"
                   />
                 </NFormItem>
+                <NFormItem
+                  v-if="commandSupportsMonitorServer(scheduleForm.commandType)"
+                  label="崩溃检查目标"
+                  class="col-span-full"
+                >
+                  <NSelect
+                    v-model:value="scheduleForm.monitorServerKey"
+                    clearable
+                    filterable
+                    :options="scheduleMonitorServerOptions"
+                    placeholder="不选则使用 Agent 默认监控服"
+                  />
+                </NFormItem>
+                <NFormItem
+                  v-if="commandSupportsStartTargets(scheduleForm.commandType)"
+                  label="崩溃检查成功后启动"
+                  class="col-span-full"
+                >
+                  <NSelect
+                    v-model:value="scheduleForm.startServerKeys"
+                    multiple
+                    clearable
+                    filterable
+                    max-tag-count="responsive"
+                    :options="scheduleStartServerOptions"
+                    placeholder="不选则默认启动除监控服外的全部服务器"
+                  />
+                </NFormItem>
+                <NFormItem
+                  v-if="commandSupportsMonitorServer(scheduleForm.commandType) || commandSupportsStartTargets(scheduleForm.commandType)"
+                  label="执行说明"
+                  class="col-span-full"
+                >
+                  <div class="agent-schedule-rule-note">
+                    <strong>监控目标和启动目标按当前任务节点保存</strong>
+                    <span>不选择监控目标时回退到 Agent 默认监控服；不选择启动目标时默认启动除监控服外的全部服务器。</span>
+                  </div>
+                </NFormItem>
                 <NFormItem v-if="scheduleForm.commandType === 'node.rcon_command'" label="RCON 目标分组">
-                  <NSelect v-model:value="scheduleForm.rconGroup" :options="nodeInstructionGroupOptions" />
+                  <NSelect v-model:value="scheduleForm.rconGroup" :options="scheduleNodeInstructionGroupOptions" />
                 </NFormItem>
                 <NFormItem v-if="scheduleForm.commandType === 'node.rcon_command'" label="RCON 指令">
                   <NInput v-model:value="scheduleForm.rconCommand" />
@@ -2858,8 +3151,8 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <section v-else-if="resultGroupRows(commandDetailModal.command).length" class="agent-detail-section">
-            <div class="agent-detail-section__title">分组执行结果</div>
+          <section v-if="resultGroupRows(commandDetailModal.command).length" class="agent-detail-section">
+            <div class="agent-detail-section__title">批量执行结果</div>
             <div class="agent-detail-server-list">
               <div
                 v-for="(row, index) in resultGroupRows(commandDetailModal.command)"
@@ -2880,7 +3173,7 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <section v-else-if="resultSingleServer(commandDetailModal.command)" class="agent-detail-section">
+          <section v-if="resultSingleServer(commandDetailModal.command)" class="agent-detail-section">
             <div class="agent-detail-section__title">服务器结果</div>
             <div class="detail-grid">
               <div class="detail-tile">
@@ -2910,6 +3203,14 @@ onBeforeUnmount(() => {
                       : '-'
                   }}
                 </div>
+              </div>
+              <div class="detail-tile">
+                <div class="detail-tile__label">主端口</div>
+                <div class="detail-tile__value">{{ resultSingleServer(commandDetailModal.command)?.primaryPort ?? '-' }}</div>
+              </div>
+              <div class="detail-tile">
+                <div class="detail-tile__label">重启次数</div>
+                <div class="detail-tile__value">{{ resultSingleServer(commandDetailModal.command)?.restartCount ?? '-' }}</div>
               </div>
             </div>
           </section>

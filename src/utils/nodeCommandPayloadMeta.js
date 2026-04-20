@@ -65,6 +65,10 @@ function normalizeNodeCommandServerKeys(values) {
   );
 }
 
+function normalizeNodeCommandMonitorServerKey(value) {
+  return normalizeString(value, 64) || null;
+}
+
 function sanitizeNodeCommandTargets(targets) {
   return (Array.isArray(targets) ? targets : [])
     .map((target) => {
@@ -87,6 +91,24 @@ function sanitizeNodeCommandPayload(payload) {
 
   if (Array.isArray(safePayload.serverKeys)) {
     safePayload.serverKeys = normalizeNodeCommandServerKeys(safePayload.serverKeys);
+  }
+
+  if (Array.isArray(safePayload.startServerKeys)) {
+    const normalizedStartServerKeys = normalizeNodeCommandServerKeys(safePayload.startServerKeys);
+    if (normalizedStartServerKeys.length) {
+      safePayload.startServerKeys = normalizedStartServerKeys;
+    } else {
+      delete safePayload.startServerKeys;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(safePayload, "monitorServerKey")) {
+    const monitorServerKey = normalizeNodeCommandMonitorServerKey(safePayload.monitorServerKey);
+    if (monitorServerKey) {
+      safePayload.monitorServerKey = monitorServerKey;
+    } else {
+      delete safePayload.monitorServerKey;
+    }
   }
 
   if (Array.isArray(safePayload.targets)) {
@@ -135,6 +157,7 @@ module.exports = {
   attachNodePayloadMeta,
   extractNodePayloadMeta,
   normalizeNotificationChannelKeys,
+  normalizeNodeCommandMonitorServerKey,
   normalizeNodeCommandServerKeys,
   sanitizeNodeCommandPayload,
   stripNodePayloadMeta,

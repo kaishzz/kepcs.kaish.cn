@@ -258,6 +258,8 @@ export interface ManagedNodeHeartbeatServerItem {
   state?: string | null
   status?: string | null
   id?: string | null
+  primaryPort?: number | null
+  restartCount?: number | null
   groups?: string[]
   image?: string[] | string | null
 }

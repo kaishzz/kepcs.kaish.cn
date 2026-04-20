@@ -9,6 +9,7 @@ const { notifyScheduledCommandQueued } = require("./gotifyNotificationService");
 const {
   attachNodePayloadMeta,
   extractNodePayloadMeta,
+  sanitizeNodeCommandPayload,
   stripNodePayloadMeta,
 } = require("../utils/nodeCommandPayloadMeta");
 const {
@@ -143,13 +144,14 @@ async function getNodeScheduleById(id) {
 
 async function createNodeSchedule(payload) {
   const scheduleTiming = resolveScheduleTiming(payload);
+  const sanitizedPayload = sanitizeNodeCommandPayload(sanitizeJsonValue(payload.payload, {}));
   const row = await cdkPrisma.nodeCommandSchedule.create({
     data: {
       nodeId: String(payload.nodeId),
       name: String(payload.name || "").trim(),
       commandType: String(payload.commandType || "").trim(),
       payload: attachNodePayloadMeta(
-        sanitizeJsonValue(payload.payload, {}),
+        sanitizedPayload,
         {
           notificationChannelKeys: payload.notificationChannelKeys,
           scheduleConfig: scheduleTiming.scheduleConfig,
@@ -200,8 +202,8 @@ async function updateNodeSchedule(id, payload) {
     scheduleTiming = resolveScheduleTiming(payload, currentRow);
 
     const basePayload = hasOwn(payload, "payload")
-      ? sanitizeJsonValue(payload.payload, {})
-      : stripNodePayloadMeta(currentRow?.payload);
+      ? sanitizeNodeCommandPayload(sanitizeJsonValue(payload.payload, {}))
+      : sanitizeNodeCommandPayload(stripNodePayloadMeta(currentRow?.payload));
 
     nextPayload = attachNodePayloadMeta(basePayload, {
       notificationChannelKeys: hasOwn(payload, "notificationChannelKeys")
@@ -299,7 +301,7 @@ async function queueScheduleRun(scheduleRow) {
     nodeId: scheduleRow.nodeId,
     commandType: scheduleRow.commandType,
     payload: attachNodePayloadMeta(
-      stripNodePayloadMeta(scheduleRow.payload),
+      sanitizeNodeCommandPayload(stripNodePayloadMeta(scheduleRow.payload)),
       {
         notificationChannelKeys: scheduleMeta.notificationChannelKeys,
         sourceScheduleId: scheduleRow.id,
