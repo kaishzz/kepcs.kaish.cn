@@ -32,7 +32,7 @@ function handleSelect(value: SegmentedOptionValue, disabled = false) {
       :key="String(option.value)"
       secondary
       :disabled="option.disabled"
-      class="console-segmented__button"
+      class="console-segmented__button console-button-tone--neutral-strong"
       :class="{ 'is-active': modelValue === option.value }"
       @click="handleSelect(option.value, option.disabled)"
     >
@@ -55,28 +55,21 @@ function handleSelect(value: SegmentedOptionValue, disabled = false) {
   min-height: 36px !important;
   padding: 0 14px !important;
   border-radius: var(--app-radius-sm) !important;
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
-  background: rgba(255, 255, 255, 0.014) !important;
-  color: var(--app-text-muted) !important;
   box-shadow: none !important;
 }
 
 .console-segmented__button.n-button:not(.n-button--disabled):hover {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background: rgba(255, 255, 255, 0.024) !important;
   color: var(--app-text) !important;
 }
 
 .console-segmented__button.is-active.n-button {
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  background: rgba(255, 255, 255, 0.018) !important;
-  color: var(--app-brand) !important;
-  box-shadow: inset 0 -1px 0 rgba(99, 226, 182, 0.88) !important;
+  background: rgba(255, 255, 255, 0.026) !important;
+  color: var(--app-text) !important;
+  box-shadow: inset 0 -1px 0 rgba(244, 248, 251, 0.22) !important;
 }
 
 .console-segmented__button.is-active.n-button:not(.n-button--disabled):hover {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  color: var(--app-brand-hover) !important;
+  color: var(--app-text) !important;
 }
 
 .console-segmented__button :deep(.n-button__content) {

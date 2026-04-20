@@ -8,6 +8,7 @@ import {
   NSpin,
 } from 'naive-ui'
 import {
+  Activity,
   Badge,
   BareMetalServer02,
   ChartBar,
@@ -130,7 +131,7 @@ const sidebarIconMap: Record<string, Component> = {
   stats: ChartBar,
   player: UserAvatar,
   challenge: Badge,
-  status: BareMetalServer02,
+  status: Activity,
   admin: Settings,
 }
 

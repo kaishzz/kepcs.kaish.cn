@@ -40,8 +40,8 @@ const form = ref<{ channels: GotifyChannelFormItem[] }>({
 })
 const testForm = ref({
   channelKeys: [] as string[],
-  title: 'KEPCS Gotify 测试通知',
-  message: '如果你收到了这条消息，说明当前 Gotify 渠道配置可用。',
+  title: 'KepCs Gotify',
+  message: '测试文本',
   priority: 5,
 })
 
@@ -64,8 +64,8 @@ const previewChannel = computed(() => {
 
 const gotifyPayloadPreview = computed(() =>
   JSON.stringify({
-    title: testForm.value.title.trim() || 'KEPCS Gotify 测试通知',
-    message: testForm.value.message.trim() || '如果你收到了这条消息，说明当前 Gotify 渠道配置可用。',
+    title: testForm.value.title.trim() || 'KepCs Gotify',
+    message: testForm.value.message.trim() || '测试文本',
     priority: Number.isFinite(Number(testForm.value.priority)) ? Number(testForm.value.priority) : 5,
   }, null, 2),
 )
@@ -184,8 +184,8 @@ async function sendChannelTest(channel: GotifyChannelFormItem) {
   try {
     await sendTestNotification({
       channelKeys: [channelKey],
-      title: `KEPCS 测试通知 · ${channel.name || channelKey}`,
-      message: `渠道 ${channel.name || channelKey} 测试成功。如果你收到了这条消息，说明 Gotify App Token 可用。`,
+      title: `KepCs Gotify · ${channel.name || channelKey}`,
+      message: '测试文本',
       priority: channel.priority,
     })
     pushToast(`测试通知已发送到 ${channel.name || channelKey}`, 'success')
@@ -207,8 +207,8 @@ async function sendCustomTest() {
   try {
     await sendTestNotification({
       channelKeys: testForm.value.channelKeys,
-      title: testForm.value.title.trim() || 'KEPCS Gotify 测试通知',
-      message: testForm.value.message.trim() || '如果你收到了这条消息，说明当前 Gotify 渠道配置可用。',
+      title: testForm.value.title.trim() || 'KepCs Gotify',
+      message: testForm.value.message.trim() || '测试文本',
       priority: Number.isFinite(Number(testForm.value.priority)) ? Number(testForm.value.priority) : 5,
     })
     pushToast(`测试通知已发送到 ${testForm.value.channelKeys.length} 个渠道`, 'success')
@@ -267,7 +267,7 @@ watch(
             />
           </NFormItem>
           <NFormItem label="测试标题">
-            <NInput v-model:value="testForm.title" placeholder="KEPCS Gotify 测试通知" />
+            <NInput v-model:value="testForm.title" placeholder="KepCs Gotify" />
           </NFormItem>
           <NFormItem label="测试优先级">
             <NInputNumber v-model:value="testForm.priority" :min="0" :max="10" :show-button="false" class="w-full" />

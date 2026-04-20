@@ -537,7 +537,7 @@ watch(
             <NTag round>已选 {{ groupModal.permissions.length }}</NTag>
           </div>
 
-          <NCheckboxGroup v-model:value="groupModal.permissions">
+          <NCheckboxGroup v-if="permissionSections.length" v-model:value="groupModal.permissions">
             <div class="permission-section-grid">
               <section v-for="section in permissionSections" :key="section.name" class="permission-section-card">
                 <div class="permission-section-card__head">
@@ -554,6 +554,10 @@ watch(
               </section>
             </div>
           </NCheckboxGroup>
+          <div v-else class="access-permission-empty">
+            <div>权限目录暂未加载到，当前无法勾选权限。</div>
+            <NButton secondary @click="loadAccess">刷新权限目录</NButton>
+          </div>
         </section>
 
         <NSpace justify="end">
@@ -589,7 +593,7 @@ watch(
             <NTag round>已选 {{ directUserModal.permissions.length }}</NTag>
           </div>
 
-          <NCheckboxGroup v-model:value="directUserModal.permissions">
+          <NCheckboxGroup v-if="permissionSections.length" v-model:value="directUserModal.permissions">
             <div class="permission-section-grid">
               <section v-for="section in permissionSections" :key="section.name" class="permission-section-card">
                 <div class="permission-section-card__head">
@@ -606,6 +610,10 @@ watch(
               </section>
             </div>
           </NCheckboxGroup>
+          <div v-else class="access-permission-empty">
+            <div>权限目录暂未加载到，当前无法勾选权限。</div>
+            <NButton secondary @click="loadAccess">刷新权限目录</NButton>
+          </div>
         </section>
 
         <NSpace justify="end">
@@ -846,6 +854,15 @@ watch(
   color: var(--app-text-soft);
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+.access-permission-empty {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px dashed var(--app-border-soft);
+  border-radius: var(--app-radius-sm);
+  color: var(--app-text-muted);
 }
 
 .access-modal-stack {

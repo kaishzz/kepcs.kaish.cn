@@ -63,7 +63,8 @@ type CdkStatusFilter = 'ALL' | 'UNUSED' | 'USED' | 'EXPIRED' | 'REVOKED'
 type CdkSort = 'CREATED_DESC' | 'CREATED_ASC' | 'EXPIRES_ASC' | 'EXPIRES_DESC' | 'UPDATED_DESC'
 type BatchAction = 'set-note' | 'set-owner' | 'set-status' | 'delete'
 type LogSubTab = 'audit' | 'orders'
-type AdminSubTab = 'access' | 'whitelist' | 'migration'
+type MapChallengeSubTab = 'edit' | 'recent'
+type ServerDataSubTab = 'catalog' | 'whitelist' | 'migration'
 type ConsoleTab =
   | 'my-cdks'
   | 'manage-cdks'
@@ -112,7 +113,8 @@ const productTogglePendingIds = ref<string[]>([])
 const activeTab = ref('my-cdks')
 const manageSubTab = ref<'create' | 'self' | 'batch'>('create')
 const logSubTab = ref<LogSubTab>('audit')
-const adminSubTab = ref<AdminSubTab>('access')
+const mapChallengeSubTab = ref<MapChallengeSubTab>('edit')
+const serverDataSubTab = ref<ServerDataSubTab>('catalog')
 const myCdks = ref<CdkItem[]>([])
 const managedCdks = ref<CdkItem[]>([])
 const logs = ref<AuditLogItem[]>([])
@@ -335,9 +337,6 @@ const canManageMapChallenges = computed(() => hasConsolePermission('console.map_
 const canManageAccess = computed(() => hasConsolePermission('console.access.manage'))
 const canCreateWhitelist = computed(() => hasConsolePermission('console.whitelist.manual'))
 const canMigrateWhitelist = computed(() => hasConsolePermission('console.whitelist.migration'))
-const canViewAdminTools = computed(() =>
-  canManageAccess.value || canCreateWhitelist.value || canMigrateWhitelist.value,
-)
 const canViewAgentNodes = computed(() => hasConsolePermission('console.agents.nodes'))
 const canViewAgentControl = computed(() => hasConsolePermission('console.agents.control'))
 const canViewAgentCommands = computed(() => hasConsolePermission('console.agents.commands'))
@@ -365,6 +364,11 @@ const canViewServerCatalog = computed(() =>
   || hasConsolePermission('console.server_catalog.idle_restart')
   || hasConsolePermission('console.server_catalog.community'),
 )
+const canViewServerDataTools = computed(() =>
+  canViewServerCatalog.value
+  || canCreateWhitelist.value
+  || canMigrateWhitelist.value,
+)
 const canManageProducts = computed(() => hasConsolePermission('console.products.manage'))
 
 const tabOptions = computed(() => {
@@ -373,9 +377,9 @@ const tabOptions = computed(() => {
   if (canManageCdks.value) tabs.push({ name: 'manage-cdks', label: 'CDK 管理' })
   if (canViewLogs.value) tabs.push({ name: 'logs', label: '日志管理' })
   if (canManageMapChallenges.value) tabs.push({ name: 'map-challenges', label: '魔怔数据' })
-  if (canViewAdminTools.value) tabs.push({ name: 'admins', label: '新增管理' })
+  if (canManageAccess.value) tabs.push({ name: 'admins', label: '权限管理' })
   if (canViewAgentTab.value) tabs.push({ name: 'agents', label: '服务器控制' })
-  if (canViewServerCatalog.value) tabs.push({ name: 'server-catalog', label: '服务器数据' })
+  if (canViewServerDataTools.value) tabs.push({ name: 'server-catalog', label: '服务器数据' })
   if (canManageProducts.value) tabs.push({ name: 'products', label: '商品管理' })
 
   return tabs
@@ -400,12 +404,17 @@ const logSubTabOptions = computed(() =>
   ].filter(Boolean) as Array<{ label: string, value: LogSubTab }>,
 )
 
-const adminSubTabOptions = computed(() =>
+const mapChallengeSubTabOptions = [
+  { label: '新增 / 更新记录', value: 'edit' },
+  { label: '最近记录', value: 'recent' },
+]
+
+const serverDataSubTabOptions = computed(() =>
   [
-    canManageAccess.value ? { label: '权限分配', value: 'access' } : null,
+    canViewServerCatalog.value ? { label: '服务器目录', value: 'catalog' } : null,
     canCreateWhitelist.value ? { label: '新增白名单', value: 'whitelist' } : null,
     canMigrateWhitelist.value ? { label: '数据迁移', value: 'migration' } : null,
-  ].filter(Boolean) as Array<{ label: string, value: AdminSubTab }>,
+  ].filter(Boolean) as Array<{ label: string, value: ServerDataSubTab }>,
 )
 
 const statusOptions = [
@@ -719,16 +728,16 @@ function syncActiveTab() {
     logSubTab.value = 'audit'
   }
 
-  if (!canManageAccess.value && adminSubTab.value === 'access') {
-    adminSubTab.value = canCreateWhitelist.value ? 'whitelist' : 'migration'
+  if (!canViewServerCatalog.value && serverDataSubTab.value === 'catalog') {
+    serverDataSubTab.value = canCreateWhitelist.value ? 'whitelist' : 'migration'
   }
 
-  if (!canCreateWhitelist.value && adminSubTab.value === 'whitelist') {
-    adminSubTab.value = canManageAccess.value ? 'access' : 'migration'
+  if (!canCreateWhitelist.value && serverDataSubTab.value === 'whitelist') {
+    serverDataSubTab.value = canViewServerCatalog.value ? 'catalog' : 'migration'
   }
 
-  if (!canMigrateWhitelist.value && adminSubTab.value === 'migration') {
-    adminSubTab.value = canManageAccess.value ? 'access' : 'whitelist'
+  if (!canMigrateWhitelist.value && serverDataSubTab.value === 'migration') {
+    serverDataSubTab.value = canViewServerCatalog.value ? 'catalog' : 'whitelist'
   }
 
   if (!tabOptions.value.find((item) => item.name === activeTab.value)) {
@@ -2847,139 +2856,171 @@ onBeforeUnmount(() => {
 
           <NTabPane v-if="canManageMapChallenges" name="map-challenges" tab="魔怔数据">
             <div class="console-wrap">
-              <ConsolePanelCard
-                title="新增 / 更新记录"
-                description="统一维护魔怔数据记录，新增和更新使用同一张表单。"
-              >
-                <NForm label-placement="top" class="console-field-grid cols-4">
-                  <NFormItem label="SteamID64">
-                    <NInput v-model:value="mapChallengeForm.steamId64" />
-                  </NFormItem>
-                  <NFormItem label="地图">
-                    <NInput v-model:value="mapChallengeForm.mapName" />
-                  </NFormItem>
-                  <NFormItem label="阶段">
-                    <NInput v-model:value="mapChallengeForm.stage" />
-                  </NFormItem>
-                  <NFormItem label="模式">
-                    <NSelect v-model:value="mapChallengeForm.mode" :options="mapChallengeModeOptions" />
-                  </NFormItem>
-                  <NFormItem v-if="mapChallengeForm.mode === 'survival'" label="存活时间 (秒)">
-                    <NInputNumber v-model:value="mapChallengeForm.duration" :min="0" :max="864000" :show-button="false" class="w-full" />
-                  </NFormItem>
-                  <NFormItem label="操作">
-                    <div class="console-inline-actions">
-                      <NButton type="primary" :loading="mapChallengeSubmitting" @click="saveMapChallengeRecord">
-                        新增 / 更新数据
-                      </NButton>
-                      <NButton secondary @click="resetMapChallengeForm">清空表单</NButton>
-                    </div>
-                  </NFormItem>
-                </NForm>
-              </ConsolePanelCard>
+              <ConsoleSegmentedTabs v-model="mapChallengeSubTab" :options="mapChallengeSubTabOptions" />
 
-              <ConsolePanelCard
-                title="最近记录"
-                description="按玩家、地图、阶段和模式筛选最近写入的魔怔数据。"
-              >
-                <ConsoleSectionBlock title="筛选条件">
-                  <NForm label-placement="top" class="console-field-grid cols-5 console-form-grid console-form-grid--balanced">
+              <Transition name="console-panel-switch" mode="out-in">
+                <ConsolePanelCard
+                  v-if="mapChallengeSubTab === 'edit'"
+                  key="map-challenges-edit"
+                  title="新增 / 更新记录"
+                  description="统一维护魔怔数据记录，新增和更新使用同一张表单。"
+                >
+                  <NForm label-placement="top" class="console-field-grid cols-4">
                     <NFormItem label="SteamID64">
-                      <NInput v-model:value="mapChallengeFilters.steamId64" />
+                      <NInput v-model:value="mapChallengeForm.steamId64" />
                     </NFormItem>
                     <NFormItem label="地图">
-                      <NInput v-model:value="mapChallengeFilters.mapName" />
+                      <NInput v-model:value="mapChallengeForm.mapName" />
                     </NFormItem>
                     <NFormItem label="阶段">
-                      <NInput v-model:value="mapChallengeFilters.stage" />
+                      <NInput v-model:value="mapChallengeForm.stage" />
                     </NFormItem>
                     <NFormItem label="模式">
-                      <NSelect v-model:value="mapChallengeFilters.mode" :options="mapChallengeFilterModeOptions" />
+                      <NSelect v-model:value="mapChallengeForm.mode" :options="mapChallengeModeOptions" />
+                    </NFormItem>
+                    <NFormItem v-if="mapChallengeForm.mode === 'survival'" label="存活时间 (秒)">
+                      <NInputNumber v-model:value="mapChallengeForm.duration" :min="0" :max="864000" :show-button="false" class="w-full" />
                     </NFormItem>
                     <NFormItem label="操作">
-                      <div class="console-inline-control">
-                        <NButton secondary class="console-action-icon" title="刷新列表" @click="loadMapChallenges">↻</NButton>
+                      <div class="console-inline-actions">
+                        <NButton type="primary" :loading="mapChallengeSubmitting" @click="saveMapChallengeRecord">
+                          新增 / 更新数据
+                        </NButton>
+                        <NButton secondary @click="resetMapChallengeForm">清空表单</NButton>
                       </div>
                     </NFormItem>
                   </NForm>
-                </ConsoleSectionBlock>
+                </ConsolePanelCard>
 
-                <div v-if="!isMobileView" class="table-shell table-shell--short-stable">
-                  <NDataTable
-                    :columns="mapChallengeColumns"
-                    :data="mapChallengePagination.pagedRows.value"
-                    :loading="mapChallengeLoading"
-                    :bordered="false"
-                  />
-                </div>
-                <div v-else class="mobile-record-list">
-                  <div v-if="mapChallengeLoading" class="hero-note min-h-[200px]">
-                    <NSpin size="large" />
-                  </div>
-                  <div v-else-if="mapChallengePagination.pagedRows.value.length" class="mobile-record-list__stack">
-                    <article
-                      v-for="row in mapChallengePagination.pagedRows.value"
-                      :key="`${row.steamId}-${row.mapName}-${row.stage}-${row.mode}`"
-                      class="mobile-info-card"
-                    >
-                      <div class="mobile-info-card__top">
-                        <strong>{{ row.name }}</strong>
-                        <span>{{ buildMapChallengeTarget(row.mapName, row.stage) }}</span>
-                      </div>
-                      <div class="mobile-info-card__grid">
-                        <div
-                          v-for="entry in buildMapChallengeEntries(row)"
-                          :key="`${row.steamId}-${row.mapName}-${row.stage}-${entry.label}`"
-                          class="mobile-info-card__item"
-                        >
-                          <span>{{ entry.label }}</span>
-                          <template v-if="entry.label === 'SteamID64'">
-                            <button type="button" class="log-copy-button" @click="copyText(entry.value, entry.label)">
-                              {{ entry.value }}
-                            </button>
-                          </template>
-                          <strong v-else>{{ entry.value }}</strong>
+                <ConsolePanelCard
+                  v-else
+                  key="map-challenges-recent"
+                  title="最近记录"
+                  description="按玩家、地图、阶段和模式筛选最近写入的魔怔数据。"
+                >
+                  <ConsoleSectionBlock title="筛选条件">
+                    <NForm label-placement="top" class="console-field-grid cols-5 console-form-grid console-form-grid--balanced">
+                      <NFormItem label="SteamID64">
+                        <NInput v-model:value="mapChallengeFilters.steamId64" />
+                      </NFormItem>
+                      <NFormItem label="地图">
+                        <NInput v-model:value="mapChallengeFilters.mapName" />
+                      </NFormItem>
+                      <NFormItem label="阶段">
+                        <NInput v-model:value="mapChallengeFilters.stage" />
+                      </NFormItem>
+                      <NFormItem label="模式">
+                        <NSelect v-model:value="mapChallengeFilters.mode" :options="mapChallengeFilterModeOptions" />
+                      </NFormItem>
+                      <NFormItem label="操作">
+                        <div class="console-inline-control">
+                          <NButton secondary class="console-action-icon" title="刷新列表" @click="loadMapChallenges">↻</NButton>
                         </div>
-                      </div>
-                      <div class="mobile-record-card__actions">
-                        <NButton type="warning" block @click="fillMapChallengeForm(row)">载入编辑</NButton>
-                      </div>
-                    </article>
+                      </NFormItem>
+                    </NForm>
+                  </ConsoleSectionBlock>
+
+                  <div v-if="!isMobileView" class="table-shell table-shell--short-stable">
+                    <NDataTable
+                      :columns="mapChallengeColumns"
+                      :data="mapChallengePagination.pagedRows.value"
+                      :loading="mapChallengeLoading"
+                      :bordered="false"
+                    />
                   </div>
-                  <div v-else class="hero-note min-h-[200px]">
-                    <div class="hero-note__inner">
-                      <div class="hero-note__title">暂无记录</div>
+                  <div v-else class="mobile-record-list">
+                    <div v-if="mapChallengeLoading" class="hero-note min-h-[200px]">
+                      <NSpin size="large" />
+                    </div>
+                    <div v-else-if="mapChallengePagination.pagedRows.value.length" class="mobile-record-list__stack">
+                      <article
+                        v-for="row in mapChallengePagination.pagedRows.value"
+                        :key="`${row.steamId}-${row.mapName}-${row.stage}-${row.mode}`"
+                        class="mobile-info-card"
+                      >
+                        <div class="mobile-info-card__top">
+                          <strong>{{ row.name }}</strong>
+                          <span>{{ buildMapChallengeTarget(row.mapName, row.stage) }}</span>
+                        </div>
+                        <div class="mobile-info-card__grid">
+                          <div
+                            v-for="entry in buildMapChallengeEntries(row)"
+                            :key="`${row.steamId}-${row.mapName}-${row.stage}-${entry.label}`"
+                            class="mobile-info-card__item"
+                          >
+                            <span>{{ entry.label }}</span>
+                            <template v-if="entry.label === 'SteamID64'">
+                              <button type="button" class="log-copy-button" @click="copyText(entry.value, entry.label)">
+                                {{ entry.value }}
+                              </button>
+                            </template>
+                            <strong v-else>{{ entry.value }}</strong>
+                          </div>
+                        </div>
+                        <div class="mobile-record-card__actions">
+                          <NButton type="warning" block @click="fillMapChallengeForm(row)">载入编辑</NButton>
+                        </div>
+                      </article>
+                    </div>
+                    <div v-else class="hero-note min-h-[200px]">
+                      <div class="hero-note__inner">
+                        <div class="hero-note__title">暂无记录</div>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div v-if="mapChallengePagination.pageCount.value > 1" class="table-pagination">
-                  <NPagination
-                    :page="mapChallengePagination.page.value"
-                    :page-count="mapChallengePagination.pageCount.value"
-                    :page-slot="7"
-                    @update:page="mapChallengePagination.setPage"
-                  />
-                </div>
-              </ConsolePanelCard>
+                  <div v-if="mapChallengePagination.pageCount.value > 1" class="table-pagination">
+                    <NPagination
+                      :page="mapChallengePagination.page.value"
+                      :page-count="mapChallengePagination.pageCount.value"
+                      :page-slot="7"
+                      @update:page="mapChallengePagination.setPage"
+                    />
+                  </div>
+                </ConsolePanelCard>
+              </Transition>
             </div>
           </NTabPane>
 
-          <NTabPane v-if="canViewAdminTools" name="admins" tab="新增管理">
+          <NTabPane v-if="canManageAccess" name="admins" tab="权限管理">
+            <AccessControlPanel
+              v-if="activeTab === 'admins'"
+              :active="activeTab === 'admins'"
+            />
+          </NTabPane>
+
+          <NTabPane v-if="canViewAgentTab" name="agents" tab="服务器控制">
+            <AgentControlPanel
+              v-if="activeTab === 'agents'"
+              :active="activeTab === 'agents'"
+              :can-view-nodes="canViewAgentNodes"
+              :can-view-control="canViewAgentControl"
+              :can-view-commands="canViewAgentCommands"
+              :can-view-rcon="canViewAgentRcon"
+              :can-view-schedules="canViewAgentSchedules"
+              :can-view-logs="canViewAgentLogs"
+            />
+          </NTabPane>
+
+          <NTabPane v-if="canViewServerDataTools" name="server-catalog" tab="服务器数据">
             <div class="console-wrap">
-              <ConsoleSegmentedTabs v-model="adminSubTab" :options="adminSubTabOptions" />
+              <ConsoleSegmentedTabs v-model="serverDataSubTab" :options="serverDataSubTabOptions" />
 
               <Transition name="console-panel-switch" mode="out-in">
-                <div :key="adminSubTab">
-                  <AccessControlPanel
-                    v-if="adminSubTab === 'access' && canManageAccess"
-                    :active="activeTab === 'admins' && adminSubTab === 'access'"
+                <div :key="serverDataSubTab">
+                  <ServerCatalogPanel
+                    v-if="serverDataSubTab === 'catalog' && canViewServerCatalog"
+                    :active="activeTab === 'server-catalog' && serverDataSubTab === 'catalog'"
+                    :can-view-kepcs="hasConsolePermission('console.server_catalog.kepcs')"
+                    :can-view-default-map-monitor="hasConsolePermission('console.server_catalog.default_map')"
+                    :can-view-idle-restart-monitor="hasConsolePermission('console.server_catalog.idle_restart')"
+                    :can-view-community="hasConsolePermission('console.server_catalog.community')"
                   />
 
                   <ConsolePanelCard
-                    v-else-if="adminSubTab === 'whitelist' && canCreateWhitelist"
+                    v-else-if="serverDataSubTab === 'whitelist' && canCreateWhitelist"
                     title="后台直接新增白名单"
-                    description="为后台场景直接补录白名单账号，和其它新增面板保持同一标题层级。"
+                    description="为后台场景直接补录白名单账号，这里统一归到服务器数据。"
                   >
                     <NForm label-placement="top" class="console-field-grid cols-3">
                       <NFormItem label="SteamID64">
@@ -3000,7 +3041,7 @@ onBeforeUnmount(() => {
                   <ConsolePanelCard
                     v-else-if="canMigrateWhitelist"
                     title="SteamID 数据迁移"
-                    description="按旧 SteamID 和新 SteamID 执行迁移，延续统一的迁移表单样式。"
+                    description="按旧 SteamID 和新 SteamID 执行迁移，统一收拢到服务器数据。"
                   >
                     <NForm label-placement="top" class="console-field-grid cols-2">
                       <NFormItem label="旧 SteamID64">
@@ -3017,30 +3058,6 @@ onBeforeUnmount(() => {
                 </div>
               </Transition>
             </div>
-          </NTabPane>
-
-          <NTabPane v-if="canViewAgentTab" name="agents" tab="服务器控制">
-            <AgentControlPanel
-              v-if="activeTab === 'agents'"
-              :active="activeTab === 'agents'"
-              :can-view-nodes="canViewAgentNodes"
-              :can-view-control="canViewAgentControl"
-              :can-view-commands="canViewAgentCommands"
-              :can-view-rcon="canViewAgentRcon"
-              :can-view-schedules="canViewAgentSchedules"
-              :can-view-logs="canViewAgentLogs"
-            />
-          </NTabPane>
-
-          <NTabPane v-if="canViewServerCatalog" name="server-catalog" tab="服务器数据">
-            <ServerCatalogPanel
-              v-if="activeTab === 'server-catalog'"
-              :active="activeTab === 'server-catalog'"
-              :can-view-kepcs="hasConsolePermission('console.server_catalog.kepcs')"
-              :can-view-default-map-monitor="hasConsolePermission('console.server_catalog.default_map')"
-              :can-view-idle-restart-monitor="hasConsolePermission('console.server_catalog.idle_restart')"
-              :can-view-community="hasConsolePermission('console.server_catalog.community')"
-            />
           </NTabPane>
 
           <NTabPane v-if="canManageProducts" name="products" tab="商品管理">
