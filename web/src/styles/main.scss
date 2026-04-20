@@ -1038,6 +1038,13 @@ img {
   --app-button-border-active: var(--app-button-primary-border-active);
 }
 
+.n-button.console-button-tone--neutral-strong:not(.nav-button) {
+  --app-button-glow-rgb: var(--app-button-neutral-rgb);
+  --app-button-border: rgba(236, 240, 246, 0.28);
+  --app-button-border-hover: rgba(244, 248, 251, 0.42);
+  --app-button-border-active: rgba(244, 248, 251, 0.5);
+}
+
 .n-button.console-button-tone--warning:not(.nav-button) {
   --app-button-glow-rgb: var(--app-button-warning-rgb);
   --app-button-border: rgba(246, 214, 152, 0.22);

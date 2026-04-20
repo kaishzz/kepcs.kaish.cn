@@ -2213,13 +2213,13 @@ onBeforeUnmount(() => {
                       <span>把旧脚本里的维护动作收成节点级命令</span>
                     </div>
                     <div class="agent-action-grid">
-                      <NButton secondary @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
-                      <NButton secondary @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
-                      <NButton secondary @click="queueNodeInstruction('node.check_update')">检查更新</NButton>
-                      <NButton secondary @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
-                      <NButton secondary @click="queueNodeInstruction('node.check_update_monitor')">更新并崩溃检查</NButton>
-                      <NButton secondary @click="queueNodeInstruction('node.check_update_start')">更新成功后启动</NButton>
-                      <NButton type="error" ghost @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
+                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
+                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
+                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.check_update')">检查更新</NButton>
+                      <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
+                      <NButton secondary class="console-button-tone--warning" @click="queueNodeInstruction('node.check_update_monitor')">更新并崩溃检查</NButton>
+                      <NButton secondary class="console-button-tone--success" @click="queueNodeInstruction('node.check_update_start')">更新成功后启动</NButton>
+                      <NButton type="error" ghost class="console-button-tone--danger" @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
                     </div>
                   </section>
 
@@ -2229,16 +2229,16 @@ onBeforeUnmount(() => {
                       <span>读取版本号, 或单独执行崩溃检查与启动流程</span>
                     </div>
                     <div class="agent-action-grid">
-                      <NButton secondary @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
-                      <NButton secondary @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
-                      <NButton secondary @click="queueNodeInstruction('node.monitor_check')">崩溃检查</NButton>
-                      <NButton secondary @click="queueNodeInstruction('node.monitor_start')">崩溃检查后启动</NButton>
+                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
+                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
+                      <NButton secondary class="console-button-tone--warning" @click="queueNodeInstruction('node.monitor_check')">崩溃检查</NButton>
+                      <NButton secondary class="console-button-tone--success" @click="queueNodeInstruction('node.monitor_start')">崩溃检查后启动</NButton>
                     </div>
                     <div class="agent-command-card__summary">
-                      检查更新只比对版本, 不会停服; 验证游戏完整性会立刻停服并执行 validate。
+                      检查更新只比对版本, 不会停服。
                     </div>
                     <div class="agent-command-card__summary">
-                      更新并崩溃检查 / 更新成功后启动 都会先执行 validate, 只有检测到 build 变化时才继续后续流程。
+                      当前没有“先只检查版本, 发现差异才停服”的单独按钮; 验证游戏完整性 / 更新并崩溃检查 / 更新成功后启动都会立刻执行 validate 并停服, 只是后两者只有 build 变化后才继续后续流程。
                     </div>
                   </section>
                 </div>
