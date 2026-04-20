@@ -27,6 +27,9 @@ interface GotifyChannelFormItem extends GotifyChannelItem {
 
 const props = defineProps<{
   active: boolean
+  canCreate?: boolean
+  canManage?: boolean
+  canTest?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -50,11 +53,24 @@ const testForm = ref({
   priority: 5,
 })
 
-const notificationSubTabOptions = [
-  { label: '新增渠道', value: 'create' as const },
-  { label: '渠道管理', value: 'manage' as const },
-  { label: '发送测试', value: 'test' as const },
-]
+const canCreate = computed(() => props.canCreate !== false)
+const canManage = computed(() => props.canManage !== false)
+const canTest = computed(() => props.canTest !== false)
+const canSaveConfig = computed(() => canCreate.value || canManage.value)
+
+const firstAvailableNotificationSubTab = computed(() => {
+  if (canCreate.value) return 'create' as const
+  if (canManage.value) return 'manage' as const
+  return 'test' as const
+})
+
+const notificationSubTabOptions = computed(() =>
+  [
+    canCreate.value ? { label: '新增渠道', value: 'create' as const } : null,
+    canManage.value ? { label: '渠道管理', value: 'manage' as const } : null,
+    canTest.value ? { label: '发送测试', value: 'test' as const } : null,
+  ].filter(Boolean) as Array<{ label: string, value: NotificationSubTab }>,
+)
 
 const channelOptions = computed(() =>
   form.value.channels
@@ -191,6 +207,10 @@ async function loadConfig(silent = false) {
 }
 
 async function saveConfig(successText = 'Gotify 渠道配置已保存') {
+  if (!canSaveConfig.value) {
+    return
+  }
+
   saving.value = true
 
   try {
@@ -246,6 +266,10 @@ function resetChannelDraft() {
 }
 
 function addDraftChannelToForm() {
+  if (!canCreate.value) {
+    return
+  }
+
   const draft = normalizeDraftChannel()
 
   form.value.channels = [...form.value.channels, draft]
@@ -272,6 +296,10 @@ async function createChannelAndSave() {
 }
 
 function handleSaveConfig() {
+  if (!canSaveConfig.value) {
+    return
+  }
+
   void saveConfig().catch(() => {
     // saveConfig already shows toast feedback
   })
@@ -300,6 +328,10 @@ function clearManageSelection() {
 }
 
 async function applyBulkEnabled(nextEnabled: boolean) {
+  if (!canManage.value) {
+    return
+  }
+
   if (!manageSelectionKeys.value.length) {
     pushToast('请先选择至少一个渠道', 'error')
     return
@@ -327,6 +359,10 @@ async function applyBulkEnabled(nextEnabled: boolean) {
 }
 
 function removeChannelFromForm(localId: string) {
+  if (!canManage.value) {
+    return
+  }
+
   form.value.channels = form.value.channels.filter((channel) => channel.localId !== localId)
   syncTestFormChannels()
   syncManageSelection()
@@ -343,6 +379,10 @@ async function sendTestNotification(payload: {
 }
 
 async function sendChannelTest(channel: GotifyChannelFormItem) {
+  if (!canTest.value) {
+    return
+  }
+
   const channelKey = String(channel.key || '').trim()
   if (!channelKey) {
     pushToast('请先保存渠道配置，再发送测试通知', 'error')
@@ -367,6 +407,10 @@ async function sendChannelTest(channel: GotifyChannelFormItem) {
 }
 
 async function sendCustomTest() {
+  if (!canTest.value) {
+    return
+  }
+
   if (!testForm.value.channelKeys.length) {
     pushToast('请先选择至少一个通知渠道', 'error')
     return
@@ -390,6 +434,22 @@ async function sendCustomTest() {
 }
 
 watch(
+  () => [canCreate.value, canManage.value, canTest.value, notificationSubTab.value] as const,
+  () => {
+    const current = notificationSubTab.value
+    const allowed =
+      (current === 'create' && canCreate.value)
+      || (current === 'manage' && canManage.value)
+      || (current === 'test' && canTest.value)
+
+    if (!allowed) {
+      notificationSubTab.value = firstAvailableNotificationSubTab.value
+    }
+  },
+  { immediate: true },
+)
+
+watch(
   () => props.active,
   (active) => {
     if (active) {
@@ -408,7 +468,7 @@ watch(
     <template #header-extra>
       <div class="gotify-panel__actions">
         <NButton secondary class="console-button-tone--neutral-strong" @click="loadConfig()">刷新</NButton>
-        <NButton secondary class="console-button-tone--neutral-strong" :loading="saving" @click="handleSaveConfig">保存配置</NButton>
+        <NButton v-if="canSaveConfig" secondary class="console-button-tone--neutral-strong" :loading="saving" @click="handleSaveConfig">保存配置</NButton>
       </div>
     </template>
 
@@ -421,7 +481,7 @@ watch(
 
       <Transition v-else name="console-panel-switch" mode="out-in">
         <div :key="notificationSubTab" class="gotify-panel__body">
-          <template v-if="notificationSubTab === 'create'">
+          <template v-if="notificationSubTab === 'create' && canCreate">
             <section class="gotify-helper-card">
               <div class="gotify-helper-card__header">
                 <strong>新增渠道</strong>
@@ -466,7 +526,7 @@ watch(
             </section>
           </template>
 
-          <template v-else-if="notificationSubTab === 'manage'">
+          <template v-else-if="notificationSubTab === 'manage' && canManage">
             <div v-if="form.channels.length" class="gotify-manage-stack">
               <section class="gotify-helper-card">
                 <div class="gotify-helper-card__header">

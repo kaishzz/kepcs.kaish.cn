@@ -30,9 +30,9 @@
   --app-button-neutral-bg: transparent;
   --app-button-neutral-bg-hover: rgba(255, 255, 255, 0.026);
   --app-button-neutral-bg-active: rgba(255, 255, 255, 0.038);
-  --app-button-neutral-border: rgba(236, 240, 246, 0.18);
-  --app-button-neutral-border-hover: rgba(236, 240, 246, 0.3);
-  --app-button-neutral-border-active: rgba(236, 240, 246, 0.36);
+  --app-button-neutral-border: rgba(236, 240, 246, 0.32);
+  --app-button-neutral-border-hover: rgba(244, 248, 251, 0.5);
+  --app-button-neutral-border-active: rgba(244, 248, 251, 0.56);
   --app-button-neutral-text: #d2d8e2;
   --app-button-neutral-text-hover: #f4f8fb;
   --app-button-disabled-bg: rgba(255, 255, 255, 0.014);
@@ -979,19 +979,7 @@ img {
 }
 
 .n-button:not(.nav-button) :is(.n-button__border, .n-button__state-border) {
-  display: block !important;
-  border-radius: inherit !important;
-  transition: border-color 180ms ease, opacity 180ms ease !important;
-}
-
-.n-button:not(.nav-button) .n-button__border {
-  border: 1px solid var(--app-button-border) !important;
-  opacity: 1 !important;
-}
-
-.n-button:not(.nav-button) .n-button__state-border {
-  border: 1px solid rgba(var(--app-button-glow-rgb), 0.18) !important;
-  opacity: 0 !important;
+  display: none !important;
 }
 
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--disabled:not(.nav-button) {
@@ -1017,31 +1005,14 @@ img {
   background: var(--app-button-bg-hover) !important;
   border-color: var(--app-button-border-hover) !important;
   color: var(--app-button-text-hover) !important;
-  box-shadow: inset 0 0 0 1px rgba(var(--app-button-glow-rgb), 0.12) !important;
-}
-
-.n-button:not(.nav-button):not(.n-button--disabled):hover .n-button__border {
-  border-color: var(--app-button-border-hover) !important;
-}
-
-.n-button:not(.nav-button):not(.n-button--disabled):hover .n-button__state-border {
-  opacity: 1 !important;
+  box-shadow: none !important;
 }
 
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type):not(.nav-button):not(.n-button--disabled):active {
   background: var(--app-button-bg-active) !important;
   border-color: var(--app-button-border-active) !important;
   color: var(--app-button-text-hover) !important;
-  box-shadow: inset 0 0 0 1px rgba(var(--app-button-glow-rgb), 0.16) !important;
-}
-
-.n-button:not(.nav-button):not(.n-button--disabled):active .n-button__border {
-  border-color: var(--app-button-border-active) !important;
-}
-
-.n-button:not(.nav-button):not(.n-button--disabled):active .n-button__state-border {
-  opacity: 1 !important;
-  border-color: rgba(var(--app-button-glow-rgb), 0.22) !important;
+  box-shadow: none !important;
 }
 
 .n-button:is(.n-button--default-type, .n-button--secondary-type, .n-button--primary-type, .n-button--warning-type, .n-button--error-type).n-button--ghost:not(.nav-button) {

@@ -329,33 +329,74 @@ function hasConsolePermission(permissionKey: string) {
   return Boolean(auth.user?.isRoot || permissionSet.value.has(permissionKey))
 }
 
-const canManageCdks = computed(() => hasConsolePermission('console.manage_cdks'))
+const canManageCdksCreate = computed(() => hasConsolePermission('console.manage_cdks.create'))
+const canManageCdksSelf = computed(() => hasConsolePermission('console.manage_cdks.self'))
+const canManageCdksBatch = computed(() => hasConsolePermission('console.manage_cdks.batch'))
+const canManageCdks = computed(() =>
+  canManageCdksCreate.value
+  || canManageCdksSelf.value
+  || canManageCdksBatch.value,
+)
 const canViewAuditLogs = computed(() => hasConsolePermission('console.logs.audit'))
 const canViewOrderLogs = computed(() => hasConsolePermission('console.logs.orders'))
 const canViewLogs = computed(() => canViewAuditLogs.value || canViewOrderLogs.value)
-const canManageMapChallenges = computed(() => hasConsolePermission('console.map_challenges'))
-const canManageAccess = computed(() => hasConsolePermission('console.access.manage'))
+const canEditMapChallenges = computed(() => hasConsolePermission('console.map_challenges.edit'))
+const canViewRecentMapChallenges = computed(() => hasConsolePermission('console.map_challenges.recent'))
+const canManageMapChallenges = computed(() =>
+  canEditMapChallenges.value || canViewRecentMapChallenges.value,
+)
+const canManageAccessGroups = computed(() => hasConsolePermission('console.access.groups'))
+const canManageAccessUsers = computed(() => hasConsolePermission('console.access.users'))
+const canManageAccess = computed(() =>
+  canManageAccessGroups.value || canManageAccessUsers.value,
+)
 const canCreateWhitelist = computed(() => hasConsolePermission('console.whitelist.manual'))
 const canMigrateWhitelist = computed(() => hasConsolePermission('console.whitelist.migration'))
-const canViewAgentNodes = computed(() => hasConsolePermission('console.agents.nodes'))
-const canViewAgentControl = computed(() => hasConsolePermission('console.agents.control'))
-const canViewAgentCommands = computed(() => hasConsolePermission('console.agents.commands'))
+const canViewAgentNodeList = computed(() => hasConsolePermission('console.agents.nodes.list'))
+const canManageAgentNodes = computed(() => hasConsolePermission('console.agents.nodes.manage'))
+const canViewAgentNodes = computed(() =>
+  canViewAgentNodeList.value || canManageAgentNodes.value,
+)
+const canViewAgentControlGroups = computed(() => hasConsolePermission('console.agents.control.groups'))
+const canViewAgentControlServers = computed(() => hasConsolePermission('console.agents.control.servers'))
+const canViewAgentControl = computed(() =>
+  canViewAgentControlGroups.value || canViewAgentControlServers.value,
+)
+const canViewAgentCommandActions = computed(() => hasConsolePermission('console.agents.commands.maintain'))
+const canViewAgentCommandRunning = computed(() => hasConsolePermission('console.agents.commands.running'))
 const canViewAgentRcon = computed(() => hasConsolePermission('console.agents.rcon'))
-const canViewAgentSchedules = computed(() => hasConsolePermission('console.agents.schedules'))
-const canViewAgentLogs = computed(() => hasConsolePermission('console.agents.logs'))
+const canEditAgentSchedules = computed(() => hasConsolePermission('console.agents.schedules.edit'))
+const canViewAgentScheduleList = computed(() => hasConsolePermission('console.agents.schedules.list'))
+const canViewAgentSchedules = computed(() =>
+  canEditAgentSchedules.value || canViewAgentScheduleList.value,
+)
+const canCreateAgentNotifications = computed(() => hasConsolePermission('console.agents.notifications.create'))
+const canManageAgentNotifications = computed(() => hasConsolePermission('console.agents.notifications.manage'))
+const canTestAgentNotifications = computed(() => hasConsolePermission('console.agents.notifications.test'))
+const canViewAgentNotifications = computed(() =>
+  canCreateAgentNotifications.value
+  || canManageAgentNotifications.value
+  || canTestAgentNotifications.value,
+)
+const canViewAgentCommandHistory = computed(() => hasConsolePermission('console.agents.logs.history'))
+const canViewAgentCommandLogDetails = computed(() => hasConsolePermission('console.agents.logs.detail'))
+const canViewAgentLogs = computed(() => canViewAgentCommandHistory.value)
 const canViewNodeOverview = computed(() =>
   canViewAgentNodes.value
   || canViewAgentControl.value
-  || canViewAgentCommands.value
+  || canViewAgentCommandActions.value
+  || canViewAgentCommandRunning.value
   || canViewAgentRcon.value
   || canViewAgentSchedules.value,
 )
 const canViewAgentTab = computed(() =>
   canViewAgentNodes.value
   || canViewAgentControl.value
-  || canViewAgentCommands.value
+  || canViewAgentCommandActions.value
+  || canViewAgentCommandRunning.value
   || canViewAgentRcon.value
   || canViewAgentSchedules.value
+  || canViewAgentNotifications.value
   || canViewAgentLogs.value,
 )
 const canViewServerCatalog = computed(() =>
@@ -369,7 +410,9 @@ const canViewServerDataTools = computed(() =>
   || canCreateWhitelist.value
   || canMigrateWhitelist.value,
 )
-const canManageProducts = computed(() => hasConsolePermission('console.products.manage'))
+const canCreateProducts = computed(() => hasConsolePermission('console.products.create'))
+const canViewProductList = computed(() => hasConsolePermission('console.products.list'))
+const canManageProducts = computed(() => canCreateProducts.value || canViewProductList.value)
 
 const tabOptions = computed(() => {
   const tabs = [{ name: 'my-cdks', label: '我的 CDK' }]
@@ -391,11 +434,13 @@ const myOverviewStats = computed(() => [
   { label: '已完成新增', value: myCdks.value.filter((item) => item.status === 'USED').length },
 ])
 
-const manageSubTabOptions = [
-  { label: '新增 CDK', value: 'create' },
-  { label: '给我自己生成', value: 'self' },
-  { label: '批量管理', value: 'batch' },
-]
+const manageSubTabOptions = computed(() =>
+  [
+    canManageCdksCreate.value ? { label: '新增 CDK', value: 'create' as const } : null,
+    canManageCdksSelf.value ? { label: '给我自己生成', value: 'self' as const } : null,
+    canManageCdksBatch.value ? { label: '批量管理', value: 'batch' as const } : null,
+  ].filter(Boolean) as Array<{ label: string, value: typeof manageSubTab.value }>,
+)
 
 const logSubTabOptions = computed(() =>
   [
@@ -404,10 +449,12 @@ const logSubTabOptions = computed(() =>
   ].filter(Boolean) as Array<{ label: string, value: LogSubTab }>,
 )
 
-const mapChallengeSubTabOptions = [
-  { label: '新增 / 更新记录', value: 'edit' },
-  { label: '最近记录', value: 'recent' },
-]
+const mapChallengeSubTabOptions = computed(() =>
+  [
+    canEditMapChallenges.value ? { label: '新增 / 更新记录', value: 'edit' as const } : null,
+    canViewRecentMapChallenges.value ? { label: '最近记录', value: 'recent' as const } : null,
+  ].filter(Boolean) as Array<{ label: string, value: typeof mapChallengeSubTab.value }>,
+)
 
 const serverDataSubTabOptions = computed(() =>
   [
@@ -720,12 +767,32 @@ function syncProductFormByType(
 }
 
 function syncActiveTab() {
+  if (!canManageCdksCreate.value && manageSubTab.value === 'create') {
+    manageSubTab.value = canManageCdksSelf.value ? 'self' : 'batch'
+  }
+
+  if (!canManageCdksSelf.value && manageSubTab.value === 'self') {
+    manageSubTab.value = canManageCdksCreate.value ? 'create' : 'batch'
+  }
+
+  if (!canManageCdksBatch.value && manageSubTab.value === 'batch') {
+    manageSubTab.value = canManageCdksCreate.value ? 'create' : 'self'
+  }
+
   if (!canViewAuditLogs.value && canViewOrderLogs.value && logSubTab.value === 'audit') {
     logSubTab.value = 'orders'
   }
 
   if (!canViewOrderLogs.value && canViewAuditLogs.value && logSubTab.value === 'orders') {
     logSubTab.value = 'audit'
+  }
+
+  if (!canEditMapChallenges.value && mapChallengeSubTab.value === 'edit') {
+    mapChallengeSubTab.value = 'recent'
+  }
+
+  if (!canViewRecentMapChallenges.value && mapChallengeSubTab.value === 'recent') {
+    mapChallengeSubTab.value = 'edit'
   }
 
   if (!canViewServerCatalog.value && serverDataSubTab.value === 'catalog') {
@@ -741,7 +808,7 @@ function syncActiveTab() {
   }
 
   if (!tabOptions.value.find((item) => item.name === activeTab.value)) {
-    activeTab.value = canManageCdks.value ? 'manage-cdks' : 'my-cdks'
+    activeTab.value = tabOptions.value[0]?.name || 'my-cdks'
   }
 }
 
@@ -982,7 +1049,7 @@ async function loadMyCdks() {
 }
 
 async function loadManagedCdks() {
-  if (!canManageCdks.value) return
+  if (!canManageCdksBatch.value) return
   manageLoading.value = true
 
   try {
@@ -1056,7 +1123,7 @@ async function loadAdmins() {
 }
 
 async function loadProducts() {
-  if (!canManageProducts.value) return
+  if (!canViewProductList.value) return
   productLoading.value = true
 
   try {
@@ -1111,6 +1178,10 @@ function replaceProductInList(product: CdkProductItem) {
 }
 
 async function toggleProductActive(row: CdkProductItem, nextValue: boolean) {
+  if (!canViewProductList.value) {
+    return
+  }
+
   if (isProductTogglePending(row.id)) {
     return
   }
@@ -1158,7 +1229,7 @@ function fillMapChallengeForm(row: MapChallengeRecordItem) {
 }
 
 async function loadMapChallenges() {
-  if (!canManageMapChallenges.value) return
+  if (!canViewRecentMapChallenges.value) return
   mapChallengeLoading.value = true
 
   try {
@@ -1182,7 +1253,7 @@ async function loadMapChallenges() {
 }
 
 function saveMapChallengeRecord() {
-  if (!canManageMapChallenges.value) {
+  if (!canEditMapChallenges.value) {
     return
   }
 
@@ -1210,7 +1281,9 @@ function saveMapChallengeRecord() {
 
       try {
         const { data } = await http.post('/console/api/map-challenges', payload)
-        await loadMapChallenges()
+        if (canViewRecentMapChallenges.value) {
+          await loadMapChallenges()
+        }
         const skippedMessage = data?.operation === 'skipped_lower_survival'
           ? '当前存活时间未超过历史最高, 本次已跳过'
           : '通关记录已存在, 本次已跳过'
@@ -1232,7 +1305,7 @@ async function ensureConsoleOverviewLoaded(force = false) {
 
   const tasks: Array<Promise<void>> = []
 
-  if (canManageCdks.value) {
+  if (canManageCdksBatch.value) {
     if (force || !consoleLoadState.value['manage-cdks']) {
       tasks.push(loadManagedCdks())
     }
@@ -1241,7 +1314,7 @@ async function ensureConsoleOverviewLoaded(force = false) {
     tasks.push(loadMyCdks())
   }
 
-  if (canManageProducts.value && (force || !consoleLoadState.value.products)) {
+  if (canViewProductList.value && (force || !consoleLoadState.value.products)) {
     tasks.push(loadProducts())
   }
 
@@ -1267,7 +1340,7 @@ async function ensureActiveTabLoaded(targetTab = activeTab.value as ConsoleTab, 
   }
 
   if (targetTab === 'manage-cdks') {
-    if (canManageCdks.value && (force || !consoleLoadState.value['manage-cdks'])) {
+    if (manageSubTab.value === 'batch' && canManageCdksBatch.value && (force || !consoleLoadState.value['manage-cdks'])) {
       await loadManagedCdks()
     }
     return
@@ -1296,7 +1369,7 @@ async function ensureActiveTabLoaded(targetTab = activeTab.value as ConsoleTab, 
   }
 
   if (targetTab === 'map-challenges') {
-    if (force || !consoleLoadState.value['map-challenges']) {
+    if (mapChallengeSubTab.value === 'recent' && (force || !consoleLoadState.value['map-challenges'])) {
       await loadMapChallenges()
     }
     return
@@ -1320,7 +1393,7 @@ async function ensureActiveTabLoaded(targetTab = activeTab.value as ConsoleTab, 
   }
 
   if (targetTab === 'products') {
-    if (force || !consoleLoadState.value.products) {
+    if (canViewProductList.value && (force || !consoleLoadState.value.products)) {
       await loadProducts()
     }
     return
@@ -1498,7 +1571,7 @@ async function createCdksForOwner(ownerSteamId: string, count: number, note: str
 }
 
 async function createCdks() {
-  if (!canManageCdks.value) return
+  if (!canManageCdksCreate.value) return
   const ownerSteamId = createForm.value.ownerSteamId.trim()
 
   openConfirmDialog({
@@ -1521,7 +1594,7 @@ async function createCdks() {
 }
 
 async function createMyCdks() {
-  if (!canManageCdks.value) return
+  if (!canManageCdksSelf.value) return
 
   openConfirmDialog({
     title: '确认生成给自己',
@@ -1609,6 +1682,10 @@ function confirmDeleteCdk(row: CdkItem) {
 }
 
 async function runBatchAction() {
+  if (!canManageCdksBatch.value) {
+    return
+  }
+
   if (!checkedIds.value.length) {
     pushToast('请先勾选需要处理的 CDK', 'error')
     return
@@ -1719,6 +1796,10 @@ function migrateWhitelistSteamId() {
 }
 
 async function createProduct() {
+  if (!canCreateProducts.value) {
+    return
+  }
+
   productSubmitting.value = true
 
   try {
@@ -1756,7 +1837,9 @@ async function createProduct() {
       isActive: false,
       sortOrder: 0,
     }
-    await loadProducts()
+    if (canViewProductList.value) {
+      await loadProducts()
+    }
     pushToast('CDK 商品已创建', 'success')
   } catch (error) {
     pushToast((error as Error).message, 'error')
@@ -1766,6 +1849,10 @@ async function createProduct() {
 }
 
 function openProductEditor(row: CdkProductItem) {
+  if (!canViewProductList.value) {
+    return
+  }
+
   productEditor.value = {
     show: true,
     id: row.id,
@@ -1785,6 +1872,10 @@ function openProductEditor(row: CdkProductItem) {
 }
 
 async function saveProductEditor() {
+  if (!canViewProductList.value) {
+    return
+  }
+
   productSubmitting.value = true
 
   try {
@@ -2009,7 +2100,7 @@ const productColumns = computed<DataTableColumns<CdkProductItem>>(() => {
 })
 
 const mapChallengeColumns = computed<DataTableColumns<MapChallengeRecordItem>>(() => {
-  return [
+  const columns: DataTableColumns<MapChallengeRecordItem> = [
     {
       title: '玩家',
       key: 'name',
@@ -2049,7 +2140,10 @@ const mapChallengeColumns = computed<DataTableColumns<MapChallengeRecordItem>>((
       key: 'updatedAt',
       render: (row) => formatDate(row.updatedAt),
     },
-    {
+  ]
+
+  if (canEditMapChallenges.value) {
+    columns.push({
       title: '操作',
       key: 'actions',
       width: 120,
@@ -2063,8 +2157,10 @@ const mapChallengeColumns = computed<DataTableColumns<MapChallengeRecordItem>>((
           },
           { default: () => '载入编辑' },
         ),
-    },
-  ]
+    })
+  }
+
+  return columns
 })
 
 watch(() => [myFilters.value.status, myFilters.value.sort], () => {
@@ -2072,11 +2168,11 @@ watch(() => [myFilters.value.status, myFilters.value.sort], () => {
 })
 
 watch(() => [manageFilters.value.status, manageFilters.value.sort], () => {
-  if (canManageCdks.value) void loadManagedCdks()
+  if (canManageCdksBatch.value) void loadManagedCdks()
 })
 
 watch(() => manageFilters.value.ownerSteamId, () => {
-  if (!canManageCdks.value) return
+  if (!canManageCdksBatch.value) return
   if (manageFilterTimer) clearTimeout(manageFilterTimer)
   manageFilterTimer = setTimeout(() => {
     void loadManagedCdks()
@@ -2119,7 +2215,7 @@ watch(() => [
   mapChallengeFilters.value.stage,
   mapChallengeFilters.value.mode,
 ], () => {
-  if (!canManageMapChallenges.value) return
+  if (!canViewRecentMapChallenges.value) return
   if (mapChallengeFilterTimer) clearTimeout(mapChallengeFilterTimer)
   mapChallengeFilterTimer = setTimeout(() => {
     void loadMapChallenges()
@@ -2153,6 +2249,26 @@ watch(logSubTab, (nextSubTab) => {
 
   if (!consoleLoadState.value['logs-audit']) {
     void loadLogs()
+  }
+})
+
+watch(manageSubTab, (nextSubTab) => {
+  if (activeTab.value !== 'manage-cdks' || nextSubTab !== 'batch' || !canManageCdksBatch.value) {
+    return
+  }
+
+  if (!consoleLoadState.value['manage-cdks']) {
+    void loadManagedCdks()
+  }
+})
+
+watch(mapChallengeSubTab, (nextSubTab) => {
+  if (activeTab.value !== 'map-challenges' || nextSubTab !== 'recent' || !canViewRecentMapChallenges.value) {
+    return
+  }
+
+  if (!consoleLoadState.value['map-challenges']) {
+    void loadMapChallenges()
   }
 })
 
@@ -2957,7 +3073,7 @@ onBeforeUnmount(() => {
                             <strong v-else>{{ entry.value }}</strong>
                           </div>
                         </div>
-                        <div class="mobile-record-card__actions">
+                        <div v-if="canEditMapChallenges" class="mobile-record-card__actions">
                           <NButton type="warning" block @click="fillMapChallengeForm(row)">载入编辑</NButton>
                         </div>
                       </article>
@@ -2986,6 +3102,8 @@ onBeforeUnmount(() => {
             <AccessControlPanel
               v-if="activeTab === 'admins'"
               :active="activeTab === 'admins'"
+              :can-manage-groups="canManageAccessGroups"
+              :can-manage-users="canManageAccessUsers"
             />
           </NTabPane>
 
@@ -2993,12 +3111,20 @@ onBeforeUnmount(() => {
             <AgentControlPanel
               v-if="activeTab === 'agents'"
               :active="activeTab === 'agents'"
-              :can-view-nodes="canViewAgentNodes"
-              :can-view-control="canViewAgentControl"
-              :can-view-commands="canViewAgentCommands"
+              :can-view-node-list="canViewAgentNodeList"
+              :can-manage-nodes="canManageAgentNodes"
+              :can-view-control-groups="canViewAgentControlGroups"
+              :can-view-control-servers="canViewAgentControlServers"
+              :can-view-command-actions="canViewAgentCommandActions"
+              :can-view-running-commands="canViewAgentCommandRunning"
               :can-view-rcon="canViewAgentRcon"
-              :can-view-schedules="canViewAgentSchedules"
-              :can-view-logs="canViewAgentLogs"
+              :can-edit-schedules="canEditAgentSchedules"
+              :can-view-schedule-list="canViewAgentScheduleList"
+              :can-create-notifications="canCreateAgentNotifications"
+              :can-manage-notifications="canManageAgentNotifications"
+              :can-test-notifications="canTestAgentNotifications"
+              :can-view-log-history="canViewAgentCommandHistory"
+              :can-view-log-details="canViewAgentCommandLogDetails"
             />
           </NTabPane>
 
@@ -3063,6 +3189,7 @@ onBeforeUnmount(() => {
           <NTabPane v-if="canManageProducts" name="products" tab="商品管理">
             <div class="console-wrap">
               <ConsolePanelCard
+                v-if="canCreateProducts"
                 title="新增支付商品"
                 description="统一维护商品基础信息、价格、类型和上架状态。"
               >
@@ -3111,6 +3238,7 @@ onBeforeUnmount(() => {
               </ConsolePanelCard>
 
               <ConsolePanelCard
+                v-if="canViewProductList"
                 title="商品列表"
                 description="按统一卡片和列表节奏查看、编辑并切换商品上架状态。"
               >

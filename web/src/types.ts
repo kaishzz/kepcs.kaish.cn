@@ -101,7 +101,7 @@ export interface AccessPermissionCatalogItem {
   description: string
   section: string
   directoryPath?: string[]
-  editable: boolean
+  grantMode?: 'default' | 'assignable' | 'legacy'
 }
 
 export interface AccessGroupMemberItem {

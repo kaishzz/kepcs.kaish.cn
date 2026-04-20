@@ -234,6 +234,14 @@ const queryRateLimit = createFastifyRateLimit({
   message: "查询过于频繁，请稍后再试。",
 });
 
+const agentQueryRateLimit = createFastifyRateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  keyPrefix: "agent-query",
+  keyGenerator: userScopedKey,
+  message: "服务器控制查询过于频繁，请稍后再试。",
+});
+
 const logQueryRateLimit = createFastifyRateLimit({
   windowMs: 60 * 1000,
   max: 25,
@@ -602,10 +610,25 @@ const nodeCommandLogQuerySchema = z.object({
 
 const nodeScheduleQuerySchema = z.object({
   nodeId: z.string().trim().optional().transform((value) => value || undefined),
-  isActive: z
-    .union([z.coerce.boolean(), z.undefined(), z.null()])
-    .optional()
-    .transform((value) => (typeof value === "boolean" ? value : undefined)),
+  isActive: z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+
+      if (normalized === "true") {
+        return true;
+      }
+
+      if (normalized === "false") {
+        return false;
+      }
+    }
+
+    return value;
+  }, z.boolean().optional()),
 });
 
 const nodeScheduleCreateSchema = z.object({
@@ -1110,28 +1133,77 @@ function sanitizeAgentCommandAuditDetail(payload = {}) {
   return sanitizeNodeCommandPayload(payload);
 }
 
-const AGENT_CONTROL_COMMAND_TYPES = new Set([
+const AGENT_GROUP_CONTROL_COMMAND_TYPES = new Set([
   "docker.start_group",
   "docker.stop_group",
   "docker.restart_group",
+]);
+
+const AGENT_SERVER_CONTROL_COMMAND_TYPES = new Set([
   "docker.start_server",
   "docker.stop_server",
   "docker.restart_server",
   "docker.remove_server",
 ]);
 
+const AGENT_NODE_DIRECTORY_PERMISSION_KEYS = [
+  "console.agents.nodes.list",
+  "console.agents.nodes.manage",
+  "console.agents.control.groups",
+  "console.agents.control.servers",
+  "console.agents.commands.maintain",
+  "console.agents.commands.running",
+  "console.agents.rcon",
+  "console.agents.schedules.edit",
+  "console.agents.schedules.list",
+  "console.agents.notifications.create",
+  "console.agents.notifications.manage",
+  "console.agents.notifications.test",
+  "console.agents.logs.history",
+];
+
+const AGENT_GOTIFY_READ_PERMISSION_KEYS = [
+  "console.agents.schedules.edit",
+  "console.agents.schedules.list",
+  "console.agents.notifications.create",
+  "console.agents.notifications.manage",
+  "console.agents.notifications.test",
+];
+
 function isNodeRconCommandType(commandType) {
   return String(commandType || "").trim() === "node.rcon_command";
 }
 
+function canCreateCdksForOwner(user, ownerSteamId) {
+  const normalizedOwnerSteamId = String(ownerSteamId || "").trim();
+
+  if (hasPermission(user, "console.manage_cdks.create")) {
+    return true;
+  }
+
+  return (
+    normalizedOwnerSteamId
+    && normalizedOwnerSteamId === String(user?.steamId || "").trim()
+    && hasPermission(user, "console.manage_cdks.self")
+  );
+}
+
 function resolveAgentCommandPermissionKey(commandType) {
-  if (isNodeRconCommandType(commandType)) {
+  const normalizedCommandType = String(commandType || "").trim();
+
+  if (isNodeRconCommandType(normalizedCommandType)) {
     return "console.agents.rcon";
   }
 
-  return AGENT_CONTROL_COMMAND_TYPES.has(String(commandType || "").trim())
-    ? "console.agents.control"
-    : "console.agents.commands";
+  if (AGENT_GROUP_CONTROL_COMMAND_TYPES.has(normalizedCommandType)) {
+    return "console.agents.control.groups";
+  }
+
+  if (AGENT_SERVER_CONTROL_COMMAND_TYPES.has(normalizedCommandType)) {
+    return "console.agents.control.servers";
+  }
+
+  return "console.agents.commands.maintain";
 }
 
 function sendConsolePermissionDenied(reply) {
@@ -1980,7 +2052,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/cdks/manage", { preHandler: [requirePermission("console.manage_cdks"), queryRateLimit] }, async (request, reply) => {
+  app.get("/console/api/cdks/manage", { preHandler: [requirePermission("console.manage_cdks.batch"), queryRateLimit] }, async (request, reply) => {
     try {
       const filters = adminFilterSchema.parse(request.query || {});
       const cdks = await listAllCdks(filters);
@@ -1994,10 +2066,15 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/cdks/manage", { preHandler: [requirePermission("console.manage_cdks"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/cdks/manage", { preHandler: [requireAnyPermission(["console.manage_cdks.create", "console.manage_cdks.self"]), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = createCdkSchema.parse(request.body || {});
       const user = getSessionUser(request);
+
+      if (!canCreateCdksForOwner(user, payload.ownerSteamId)) {
+        return sendConsolePermissionDenied(reply);
+      }
+
       const cdks = await createCdks({ ...payload, createdBySteamId: user.steamId });
 
       await writeAuditLog({
@@ -2022,7 +2099,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.patch("/console/api/cdks/manage/:id", { preHandler: [requirePermission("console.manage_cdks"), adminWriteRateLimit] }, async (request, reply) => {
+  app.patch("/console/api/cdks/manage/:id", { preHandler: [requirePermission("console.manage_cdks.batch"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = updateCdkSchema.parse(request.body || {});
       const cdk = await updateCdkAdmin(request.params.id, payload);
@@ -2047,7 +2124,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.delete("/console/api/cdks/manage/:id", { preHandler: [requirePermission("console.manage_cdks"), adminWriteRateLimit] }, async (request, reply) => {
+  app.delete("/console/api/cdks/manage/:id", { preHandler: [requirePermission("console.manage_cdks.batch"), adminWriteRateLimit] }, async (request, reply) => {
     const user = getSessionUser(request);
     await deleteCdkAdmin(request.params.id);
     await writeAuditLog({
@@ -2061,7 +2138,7 @@ async function createFastifyApp() {
     return reply.send({ success: true });
   });
 
-  app.post("/console/api/cdks/manage/batch", { preHandler: [requirePermission("console.manage_cdks"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/cdks/manage/batch", { preHandler: [requirePermission("console.manage_cdks.batch"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = batchManageSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2101,7 +2178,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/cdks/:id/transfer", { preHandler: [requirePermission("console.manage_cdks"), cdkWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/cdks/:id/transfer", { preHandler: [requirePermission("console.manage_cdks.batch"), cdkWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = transferSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2205,12 +2282,18 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/access", { preHandler: [requirePermission("console.access.manage"), queryRateLimit] }, async (_request, reply) => {
+  app.get("/console/api/access", { preHandler: [requireAnyPermission(["console.access.groups", "console.access.users"]), queryRateLimit] }, async (request, reply) => {
+    const user = getSessionUser(request);
     const overview = await listAccessOverview();
-    return reply.send({ success: true, ...overview });
+    return reply.send({
+      success: true,
+      ...overview,
+      groups: hasPermission(user, "console.access.groups") ? overview.groups : [],
+      directUsers: hasPermission(user, "console.access.users") ? overview.directUsers : [],
+    });
   });
 
-  app.post("/console/api/access/groups", { preHandler: [requirePermission("console.access.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/access/groups", { preHandler: [requirePermission("console.access.groups"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = accessGroupCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2244,7 +2327,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.patch("/console/api/access/groups/:id", { preHandler: [requirePermission("console.access.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.patch("/console/api/access/groups/:id", { preHandler: [requirePermission("console.access.groups"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = accessGroupUpdateSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2273,7 +2356,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.put("/console/api/access/groups/:id/permissions", { preHandler: [requirePermission("console.access.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.put("/console/api/access/groups/:id/permissions", { preHandler: [requirePermission("console.access.groups"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = accessGroupPermissionSchema.parse(request.body || {});
       const normalizedPermissions = normalizePermissionList(payload.permissions, { editableOnly: true });
@@ -2303,7 +2386,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.put("/console/api/access/groups/:id/members", { preHandler: [requirePermission("console.access.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.put("/console/api/access/groups/:id/members", { preHandler: [requirePermission("console.access.groups"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = accessGroupMemberSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2344,7 +2427,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.delete("/console/api/access/groups/:id", { preHandler: [requirePermission("console.access.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.delete("/console/api/access/groups/:id", { preHandler: [requirePermission("console.access.groups"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const user = getSessionUser(request);
       await deleteAccessGroup(request.params.id);
@@ -2372,7 +2455,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/access/users", { preHandler: [requirePermission("console.access.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/access/users", { preHandler: [requirePermission("console.access.users"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = directAccessUserSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2410,7 +2493,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.patch("/console/api/access/users/:steamId", { preHandler: [requirePermission("console.access.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.patch("/console/api/access/users/:steamId", { preHandler: [requirePermission("console.access.users"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = directAccessUserUpdateSchema.parse(request.body || {});
       const steamId = String(request.params.steamId || "").trim();
@@ -2453,7 +2536,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.delete("/console/api/access/users/:steamId", { preHandler: [requirePermission("console.access.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.delete("/console/api/access/users/:steamId", { preHandler: [requirePermission("console.access.users"), adminWriteRateLimit] }, async (request, reply) => {
     const user = getSessionUser(request);
     await deleteDirectAccessUser(request.params.steamId);
 
@@ -2469,12 +2552,12 @@ async function createFastifyApp() {
     return reply.send({ success: true });
   });
 
-  app.get("/console/api/products/manage", { preHandler: [requirePermission("console.products.manage"), queryRateLimit] }, async (_request, reply) => {
+  app.get("/console/api/products/manage", { preHandler: [requirePermission("console.products.list"), queryRateLimit] }, async (_request, reply) => {
     const products = await listAllProducts();
     return reply.send({ success: true, products });
   });
 
-  app.get("/console/api/map-challenges", { preHandler: [requirePermission("console.map_challenges"), queryRateLimit] }, async (request, reply) => {
+  app.get("/console/api/map-challenges", { preHandler: [requirePermission("console.map_challenges.recent"), queryRateLimit] }, async (request, reply) => {
     try {
       const payload = adminMapChallengeListSchema.parse(request.query || {});
       const rows = await listAdminMapChallengeRecords({
@@ -2494,7 +2577,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/map-challenges", { preHandler: [requirePermission("console.map_challenges"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/map-challenges", { preHandler: [requirePermission("console.map_challenges.edit"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = upsertMapChallengeSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2600,7 +2683,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/products/manage", { preHandler: [requirePermission("console.products.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/products/manage", { preHandler: [requirePermission("console.products.create"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = productCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2625,7 +2708,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.patch("/console/api/products/manage/:id", { preHandler: [requirePermission("console.products.manage"), adminWriteRateLimit] }, async (request, reply) => {
+  app.patch("/console/api/products/manage/:id", { preHandler: [requirePermission("console.products.list"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = productUpdateSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2650,12 +2733,12 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/agent/nodes", { preHandler: [requireAnyPermission(["console.agents.nodes", "console.agents.control", "console.agents.commands", "console.agents.rcon", "console.agents.schedules"]), queryRateLimit] }, async (_request, reply) => {
+  app.get("/console/api/agent/nodes", { preHandler: [requireAnyPermission(AGENT_NODE_DIRECTORY_PERMISSION_KEYS), agentQueryRateLimit] }, async (_request, reply) => {
     const nodes = await listManagedNodes();
     return reply.send({ success: true, nodes });
   });
 
-  app.post("/console/api/agent/nodes", { preHandler: [requirePermission("console.agents.nodes"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/agent/nodes", { preHandler: [requirePermission("console.agents.nodes.manage"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = managedNodeCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2687,7 +2770,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.patch("/console/api/agent/nodes/:id", { preHandler: [requirePermission("console.agents.nodes"), adminWriteRateLimit] }, async (request, reply) => {
+  app.patch("/console/api/agent/nodes/:id", { preHandler: [requirePermission("console.agents.nodes.manage"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = managedNodeUpdateSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2720,7 +2803,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/agent/nodes/:id/rotate-key", { preHandler: [requirePermission("console.agents.nodes"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/agent/nodes/:id/rotate-key", { preHandler: [requirePermission("console.agents.nodes.manage"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const user = getSessionUser(request);
       const rotated = await rotateManagedNodeApiKey(request.params.id);
@@ -2744,7 +2827,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/agent/commands", { preHandler: [requirePermission("console.agents.logs"), queryRateLimit] }, async (request, reply) => {
+  app.get("/console/api/agent/commands", { preHandler: [requirePermission("console.agents.logs.history"), queryRateLimit] }, async (request, reply) => {
     try {
       const payload = managedNodeCommandQuerySchema.parse(request.query || {});
       const commands = await listNodeCommands(payload);
@@ -2758,7 +2841,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/agent/commands/active", { preHandler: [requireAnyPermission(["console.agents.commands", "console.agents.logs"]), queryRateLimit] }, async (request, reply) => {
+  app.get("/console/api/agent/commands/active", { preHandler: [requireAnyPermission(["console.agents.commands.running", "console.agents.logs.history"]), agentQueryRateLimit] }, async (request, reply) => {
     try {
       const payload = activeNodeCommandQuerySchema.parse(request.query || {});
       const commands = await listNodeCommands({
@@ -2776,7 +2859,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/agent/commands/:id/cancel", { preHandler: [requirePermission("console.agents.commands"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/agent/commands/:id/cancel", { preHandler: [requirePermission("console.agents.commands.running"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = commandCancellationSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2809,7 +2892,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/agent/commands/batch-cancel", { preHandler: [requirePermission("console.agents.commands"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/agent/commands/batch-cancel", { preHandler: [requirePermission("console.agents.commands.running"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = batchCommandCancellationSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2846,7 +2929,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/agent/schedules", { preHandler: [requirePermission("console.agents.schedules"), queryRateLimit] }, async (request, reply) => {
+  app.get("/console/api/agent/schedules", { preHandler: [requireAnyPermission(["console.agents.schedules.edit", "console.agents.schedules.list"]), agentQueryRateLimit] }, async (request, reply) => {
     try {
       const payload = nodeScheduleQuerySchema.parse(request.query || {});
       const user = getSessionUser(request);
@@ -2854,6 +2937,9 @@ async function createFastifyApp() {
       const visibleSchedules = hasPermission(user, "console.agents.rcon")
         ? schedules
         : schedules.filter((schedule) => !isNodeRconCommandType(schedule.commandType));
+      reply.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      reply.header("Pragma", "no-cache");
+      reply.header("Expires", "0");
       return reply.send({ success: true, schedules: visibleSchedules });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -2864,7 +2950,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/agent/schedules", { preHandler: [requirePermission("console.agents.schedules"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/agent/schedules", { preHandler: [requirePermission("console.agents.schedules.edit"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = nodeScheduleCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2902,7 +2988,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.patch("/console/api/agent/schedules/:id", { preHandler: [requirePermission("console.agents.schedules"), adminWriteRateLimit] }, async (request, reply) => {
+  app.patch("/console/api/agent/schedules/:id", { preHandler: [requirePermission("console.agents.schedules.edit"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = nodeScheduleUpdateSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -2960,7 +3046,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.delete("/console/api/agent/schedules/:id", { preHandler: [requirePermission("console.agents.schedules"), adminWriteRateLimit] }, async (request, reply) => {
+  app.delete("/console/api/agent/schedules/:id", { preHandler: [requirePermission("console.agents.schedules.edit"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const user = getSessionUser(request);
       const existingSchedule = await getNodeScheduleById(request.params.id);
@@ -2993,15 +3079,21 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/agent/notifications/gotify", { preHandler: [requirePermission("console.agents.schedules"), queryRateLimit] }, async (_request, reply) => {
+  app.get("/console/api/agent/notifications/gotify", { preHandler: [requireAnyPermission(AGENT_GOTIFY_READ_PERMISSION_KEYS), agentQueryRateLimit] }, async (request, reply) => {
+    const user = getSessionUser(request);
     const config = await getGotifyConfig();
+    const includeToken = hasPermission(user, "console.agents.notifications.create")
+      || hasPermission(user, "console.agents.notifications.manage");
+    reply.header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    reply.header("Pragma", "no-cache");
+    reply.header("Expires", "0");
     return reply.send({
       success: true,
-      config: serializeGotifyConfig(config, { includeToken: true }),
+      config: serializeGotifyConfig(config, { includeToken }),
     });
   });
 
-  app.patch("/console/api/agent/notifications/gotify", { preHandler: [requirePermission("console.agents.schedules"), adminWriteRateLimit] }, async (request, reply) => {
+  app.patch("/console/api/agent/notifications/gotify", { preHandler: [requireAnyPermission(["console.agents.notifications.create", "console.agents.notifications.manage"]), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = gotifyConfigUpdateSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -3039,7 +3131,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/agent/notifications/gotify/test", { preHandler: [requirePermission("console.agents.schedules"), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/agent/notifications/gotify/test", { preHandler: [requirePermission("console.agents.notifications.test"), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = gotifyTestSchema.parse(request.body || {});
       const user = getSessionUser(request);
@@ -3084,7 +3176,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.get("/console/api/agent/commands/:id/logs", { preHandler: [requirePermission("console.agents.logs"), queryRateLimit] }, async (request, reply) => {
+  app.get("/console/api/agent/commands/:id/logs", { preHandler: [requirePermission("console.agents.logs.detail"), queryRateLimit] }, async (request, reply) => {
     try {
       const payload = nodeCommandLogQuerySchema.parse(request.query || {});
       const logs = await listNodeCommandLogs(request.params.id, payload.limit);
@@ -3098,7 +3190,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/console/api/agent/nodes/:id/commands", { preHandler: [requireAnyPermission(["console.agents.control", "console.agents.commands", "console.agents.rcon"]), adminWriteRateLimit] }, async (request, reply) => {
+  app.post("/console/api/agent/nodes/:id/commands", { preHandler: [requireAnyPermission(["console.agents.control.groups", "console.agents.control.servers", "console.agents.commands.maintain", "console.agents.rcon"]), adminWriteRateLimit] }, async (request, reply) => {
     try {
       const payload = managedNodeCommandCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);

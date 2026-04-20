@@ -629,7 +629,7 @@ const kepcsColumns = computed<DataTableColumns<KepcsCatalogServerItem>>(() => [
           ),
           h(
             NButton,
-            { type: 'error', ghost: true, size: 'small', onClick: () => confirmDeleteKepcs(row) },
+            { secondary: true, class: 'console-button-tone--danger', size: 'small', onClick: () => confirmDeleteKepcs(row) },
             { default: () => '删除' },
           ),
         ],
@@ -670,7 +670,7 @@ const communityColumns = computed<DataTableColumns<CommunityCatalogServerItem>>(
           ),
           h(
             NButton,
-            { type: 'error', ghost: true, size: 'small', onClick: () => confirmDeleteCommunity(row) },
+            { secondary: true, class: 'console-button-tone--danger', size: 'small', onClick: () => confirmDeleteCommunity(row) },
             { default: () => '删除' },
           ),
         ],
@@ -870,8 +870,8 @@ watch(
                       编辑
                     </NButton>
                     <NButton
-                      type="error"
-                      ghost
+                      secondary
+                      class="console-button-tone--danger"
                       block
                       @click="activeTab === 'kepcs'
                         ? confirmDeleteKepcs(row as KepcsCatalogServerItem)

@@ -28,6 +28,8 @@ import type {
 
 const props = defineProps<{
   active: boolean
+  canManageGroups?: boolean
+  canManageUsers?: boolean
 }>()
 
 type PermissionSection = {
@@ -73,8 +75,11 @@ const directUserModal = ref({
 })
 
 const editableCatalog = computed(() =>
-  catalog.value.filter((item) => item.editable !== false && item.key !== 'console.my_cdks'),
+  catalog.value.filter((item) => item.grantMode === 'assignable'),
 )
+
+const canManageGroups = computed(() => props.canManageGroups !== false)
+const canManageUsers = computed(() => props.canManageUsers !== false)
 
 function resolvePermissionDirectoryPath(item: AccessPermissionCatalogItem) {
   const path = Array.isArray(item.directoryPath) ? item.directoryPath.filter(Boolean) : []
@@ -115,14 +120,16 @@ const permissionSections = computed<PermissionSection[]>(() => {
   }))
 })
 
-const overviewStats = computed(() => [
-  { label: '权限组', value: groups.value.length },
-  { label: 'SteamID 直授', value: directUsers.value.length },
-  {
-    label: '已开放权限点',
-    value: editableCatalog.value.length,
-  },
-])
+const overviewStats = computed(() =>
+  [
+    canManageGroups.value ? { label: '权限组', value: groups.value.length } : null,
+    canManageUsers.value ? { label: 'SteamID 直授', value: directUsers.value.length } : null,
+    {
+      label: '已开放权限点',
+      value: editableCatalog.value.length,
+    },
+  ].filter(Boolean) as Array<{ label: string, value: number }>,
+)
 
 const totalMembers = computed(() =>
   groups.value.reduce((sum, group) => sum + group.members.length, 0),
@@ -202,11 +209,19 @@ function closeConfirmDialog() {
 }
 
 function openCreateGroup() {
+  if (!canManageGroups.value) {
+    return
+  }
+
   resetGroupModal()
   groupModal.value.show = true
 }
 
 function openEditGroup(group: AccessGroupItem) {
+  if (!canManageGroups.value) {
+    return
+  }
+
   groupModal.value = {
     show: true,
     id: group.id,
@@ -237,6 +252,10 @@ function removeGroupMemberRow(index: number) {
 }
 
 async function saveGroup() {
+  if (!canManageGroups.value) {
+    return
+  }
+
   saving.value = true
 
   try {
@@ -289,6 +308,10 @@ async function saveGroup() {
 }
 
 function confirmDeleteGroup(group: AccessGroupItem) {
+  if (!canManageGroups.value) {
+    return
+  }
+
   openConfirmDialog(
     '确认删除权限组',
     ['删除后组内成员将失去该组授予的权限', `确认删除 ${group.name} (${group.code})`],
@@ -302,11 +325,19 @@ function confirmDeleteGroup(group: AccessGroupItem) {
 }
 
 function openCreateDirectUser() {
+  if (!canManageUsers.value) {
+    return
+  }
+
   resetDirectUserModal()
   directUserModal.value.show = true
 }
 
 function openEditDirectUser(user: DirectAccessUserItem) {
+  if (!canManageUsers.value) {
+    return
+  }
+
   directUserModal.value = {
     show: true,
     steamId: user.steamId,
@@ -316,6 +347,10 @@ function openEditDirectUser(user: DirectAccessUserItem) {
 }
 
 async function saveDirectUser() {
+  if (!canManageUsers.value) {
+    return
+  }
+
   saving.value = true
 
   try {
@@ -346,6 +381,10 @@ async function saveDirectUser() {
 }
 
 function confirmDeleteDirectUser(user: DirectAccessUserItem) {
+  if (!canManageUsers.value) {
+    return
+  }
+
   openConfirmDialog(
     '确认删除直授权限',
     ['删除后将移除该 SteamID 的单独授予权限', `确认删除 ${user.steamId}`],
@@ -393,6 +432,7 @@ watch(
     <template v-else>
       <div class="access-main-grid">
         <ConsolePanelCard
+          v-if="canManageGroups"
           title="权限组"
           description="适合给同一批成员分配整组后台权限和子菜单访问范围。"
           class="access-card-shell"
@@ -456,6 +496,7 @@ watch(
         </ConsolePanelCard>
 
         <ConsolePanelCard
+          v-if="canManageUsers"
           title="SteamID 直授"
           description="适合给单个 SteamID 单独开放页面或临时附加某几个操作权限。"
           class="access-card-shell"
@@ -517,7 +558,7 @@ watch(
 
     </template>
 
-    <NModal v-model:show="groupModal.show" preset="card" :title="groupModal.id ? '编辑权限组' : '新增权限组'" class="max-w-[960px]">
+    <NModal v-if="canManageGroups" v-model:show="groupModal.show" preset="card" :title="groupModal.id ? '编辑权限组' : '新增权限组'" class="max-w-[960px]">
       <div class="access-modal-stack">
         <section class="console-subsection access-modal-section">
           <div class="console-card-head">
@@ -582,7 +623,7 @@ watch(
                   <section v-for="directory in section.directories" :key="directory.key" class="permission-directory-card">
                     <div class="permission-directory-card__head">
                       <div>
-                        <div class="permission-directory-card__eyebrow">一级目录</div>
+                        <div class="permission-directory-card__eyebrow">子目录</div>
                         <div class="permission-directory-card__title">{{ directory.label }}</div>
                       </div>
                       <NTag size="small" round>{{ directory.items.length }}</NTag>
@@ -616,7 +657,7 @@ watch(
       </div>
     </NModal>
 
-    <NModal v-model:show="directUserModal.show" preset="card" title="SteamID 直授权限" class="max-w-[840px]">
+    <NModal v-if="canManageUsers" v-model:show="directUserModal.show" preset="card" title="SteamID 直授权限" class="max-w-[840px]">
       <div class="access-modal-stack">
         <section class="console-subsection access-modal-section">
           <div class="console-card-head">
@@ -657,7 +698,7 @@ watch(
                   <section v-for="directory in section.directories" :key="directory.key" class="permission-directory-card">
                     <div class="permission-directory-card__head">
                       <div>
-                        <div class="permission-directory-card__eyebrow">一级目录</div>
+                        <div class="permission-directory-card__eyebrow">子目录</div>
                         <div class="permission-directory-card__title">{{ directory.label }}</div>
                       </div>
                       <NTag size="small" round>{{ directory.items.length }}</NTag>

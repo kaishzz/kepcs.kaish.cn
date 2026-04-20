@@ -151,7 +151,7 @@ async function resolveConsoleAccess(steamId, { isRoot = false } = {}) {
       role: "root",
       isRoot: true,
       isStaff: true,
-      permissions: [...ALL_CONSOLE_PERMISSION_KEYS],
+      permissions: normalizePermissionList(ALL_CONSOLE_PERMISSION_KEYS),
       groupCodes: [],
       groupNames: [],
       groupMemberships: [],

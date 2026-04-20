@@ -39,19 +39,35 @@ import type {
 
 const props = withDefaults(defineProps<{
   active: boolean
-  canViewNodes?: boolean
-  canViewControl?: boolean
-  canViewCommands?: boolean
+  canViewNodeList?: boolean
+  canManageNodes?: boolean
+  canViewControlGroups?: boolean
+  canViewControlServers?: boolean
+  canViewCommandActions?: boolean
+  canViewRunningCommands?: boolean
   canViewRcon?: boolean
-  canViewSchedules?: boolean
-  canViewLogs?: boolean
+  canEditSchedules?: boolean
+  canViewScheduleList?: boolean
+  canCreateNotifications?: boolean
+  canManageNotifications?: boolean
+  canTestNotifications?: boolean
+  canViewLogHistory?: boolean
+  canViewLogDetails?: boolean
 }>(), {
-  canViewNodes: true,
-  canViewControl: true,
-  canViewCommands: true,
+  canViewNodeList: true,
+  canManageNodes: true,
+  canViewControlGroups: true,
+  canViewControlServers: true,
+  canViewCommandActions: true,
+  canViewRunningCommands: true,
   canViewRcon: true,
-  canViewSchedules: true,
-  canViewLogs: true,
+  canEditSchedules: true,
+  canViewScheduleList: true,
+  canCreateNotifications: true,
+  canManageNotifications: true,
+  canTestNotifications: true,
+  canViewLogHistory: true,
+  canViewLogDetails: true,
 })
 
 type NodeFormMode = 'create' | 'edit'
@@ -201,6 +217,9 @@ const confirmState = ref({
 
 let pendingConfirmAction: (() => Promise<void>) | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
+// Polling and post-save refresh can overlap; only the newest schedule response should win.
+let scheduleLoadRequestCursor = 0
+let visibleScheduleLoadCount = 0
 const LOGICAL_GROUPS = ['all', 'xl', 'pt', 'ks'] as const
 
 const controlNodeOptions = computed(() =>
@@ -257,45 +276,72 @@ const scheduleModeOptions = [
   { label: '每 N 小时按时间窗', value: 'every_n_hours' },
 ]
 
+const canViewNodesTab = computed(() => props.canViewNodeList || props.canManageNodes)
+const canViewControlTab = computed(() => props.canViewControlGroups || props.canViewControlServers)
+const canViewCommandPanel = computed(() =>
+  props.canViewCommandActions || props.canViewRcon || props.canViewRunningCommands,
+)
+const canViewScheduleTab = computed(() => props.canEditSchedules || props.canViewScheduleList)
+const canViewNotificationsTab = computed(() =>
+  props.canCreateNotifications || props.canManageNotifications || props.canTestNotifications,
+)
+const canViewLogsTab = computed(() => props.canViewLogHistory)
+const canReadGotifyConfig = computed(() => canViewScheduleTab.value || canViewNotificationsTab.value)
+const canAccessNodeDirectory = computed(() =>
+  canViewNodesTab.value
+  || canViewControlTab.value
+  || canViewCommandPanel.value
+  || canViewScheduleTab.value
+  || canViewNotificationsTab.value
+  || canViewLogsTab.value,
+)
+
 const firstAvailableAgentTab = computed(() => {
-  if (props.canViewNodes) return 'nodes'
-  if (props.canViewControl) return 'control'
-  if (props.canViewCommands || props.canViewRcon) return 'commands'
-  if (props.canViewSchedules) return 'schedules'
+  if (canViewNodesTab.value) return 'nodes'
+  if (canViewControlTab.value) return 'control'
+  if (canViewCommandPanel.value) return 'commands'
+  if (canViewScheduleTab.value) return 'schedules'
+  if (canViewNotificationsTab.value) return 'notifications'
   return 'logs'
 })
 
-const canViewCommandPanel = computed(() => props.canViewCommands || props.canViewRcon)
-
 const firstAvailableCommandSubTab = computed(() => {
-  if (props.canViewCommands) return 'actions' as const
+  if (props.canViewCommandActions) return 'actions' as const
   if (props.canViewRcon) return 'rcon' as const
+  if (props.canViewRunningCommands) return 'running' as const
   return 'running' as const
 })
 
 const agentPanelTabOptions = computed(() =>
   [
-    props.canViewNodes ? { label: '节点管理', value: 'nodes' } : null,
-    props.canViewControl ? { label: '批量操作', value: 'control' } : null,
+    canViewNodesTab.value ? { label: '节点管理', value: 'nodes' } : null,
+    canViewControlTab.value ? { label: '批量操作', value: 'control' } : null,
     canViewCommandPanel.value ? { label: '节点操作', value: 'commands' } : null,
-    props.canViewSchedules ? { label: '定时任务', value: 'schedules' } : null,
-    props.canViewSchedules ? { label: '通知管理', value: 'notifications' } : null,
-    props.canViewLogs ? { label: '日志管理', value: 'logs' } : null,
+    canViewScheduleTab.value ? { label: '定时任务', value: 'schedules' } : null,
+    canViewNotificationsTab.value ? { label: '通知管理', value: 'notifications' } : null,
+    canViewLogsTab.value ? { label: '日志管理', value: 'logs' } : null,
   ].filter(Boolean) as Array<{ label: string, value: typeof agentPanelTab.value }>,
 )
 
 const commandSubTabOptions = computed(() =>
   [
-    props.canViewCommands ? { label: '维护命令', value: 'actions' as const } : null,
+    props.canViewCommandActions ? { label: '维护命令', value: 'actions' as const } : null,
     props.canViewRcon ? { label: 'RCON 操作', value: 'rcon' as const } : null,
-    props.canViewCommands ? { label: `进行中命令 ${activeCommands.value.length}`, value: 'running' as const } : null,
+    props.canViewRunningCommands ? { label: `进行中命令 ${activeCommands.value.length}`, value: 'running' as const } : null,
   ].filter(Boolean) as Array<{ label: string, value: typeof commandSubTab.value }>,
 )
 
-const scheduleSubTabOptions = [
-  { label: '编辑任务', value: 'edit' as const },
-  { label: '任务列表', value: 'list' as const },
-]
+const firstAvailableScheduleSubTab = computed(() => {
+  if (props.canEditSchedules) return 'edit' as const
+  return 'list' as const
+})
+
+const scheduleSubTabOptions = computed(() =>
+  [
+    props.canEditSchedules ? { label: '编辑任务', value: 'edit' as const } : null,
+    props.canViewScheduleList ? { label: '任务列表', value: 'list' as const } : null,
+  ].filter(Boolean) as Array<{ label: string, value: typeof scheduleSubTab.value }>,
+)
 
 const scheduleCommandOptions = computed(() => {
   return props.canViewRcon
@@ -1127,10 +1173,18 @@ function buildMaintenancePayload(commandType: NodeActionType) {
 }
 
 function queueMaintenanceCommand(commandType: MaintenanceCommandType) {
+  if (!props.canViewCommandActions) {
+    return
+  }
+
   queueNodeInstruction(commandType, buildMaintenancePayload(commandType))
 }
 
 function queueManualRconCommand() {
+  if (!props.canViewRcon) {
+    return
+  }
+
   try {
     const payload = buildManualRconPayload()
     queueNodeInstruction('node.rcon_command', payload)
@@ -1155,7 +1209,7 @@ async function copyText(value: string | null | undefined, label: string) {
 }
 
 async function loadNodes(silent = false) {
-  if (!props.canViewNodes && !props.canViewControl && !props.canViewCommands && !props.canViewRcon && !props.canViewSchedules) {
+  if (!canAccessNodeDirectory.value) {
     nodes.value = []
     return
   }
@@ -1179,7 +1233,7 @@ async function loadNodes(silent = false) {
 }
 
 async function loadCommands(silent = false) {
-  if (!props.canViewLogs) {
+  if (!props.canViewLogHistory) {
     commands.value = []
     return
   }
@@ -1209,7 +1263,7 @@ async function loadCommands(silent = false) {
 }
 
 async function loadActiveCommands(silent = false) {
-  if (!props.canViewCommands && !props.canViewLogs) {
+  if (!props.canViewRunningCommands && !props.canViewLogHistory) {
     activeCommands.value = []
     return
   }
@@ -1237,31 +1291,53 @@ async function loadActiveCommands(silent = false) {
 }
 
 async function loadSchedules(silent = false) {
-  if (!props.canViewSchedules) {
+  if (!canViewScheduleTab.value) {
     schedules.value = []
+    loadingSchedules.value = false
     return
   }
 
+  const requestId = ++scheduleLoadRequestCursor
+
   if (!silent) {
+    visibleScheduleLoadCount += 1
     loadingSchedules.value = true
   }
 
   try {
-    const { data } = await http.get(`${CONSOLE_API_BASE}/agent/schedules`)
+    const { data } = await http.get(`${CONSOLE_API_BASE}/agent/schedules`, {
+      params: {
+        _: Date.now(),
+      },
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    })
+
+    if (requestId !== scheduleLoadRequestCursor) {
+      return
+    }
+
     schedules.value = sortSchedules(data.schedules || [])
   } catch (error) {
+    if (requestId !== scheduleLoadRequestCursor) {
+      return
+    }
+
     if (!silent) {
       pushToast((error as Error).message, 'error')
     }
   } finally {
     if (!silent) {
-      loadingSchedules.value = false
+      visibleScheduleLoadCount = Math.max(0, visibleScheduleLoadCount - 1)
+      loadingSchedules.value = visibleScheduleLoadCount > 0
     }
   }
 }
 
 async function loadGotifyChannels(silent = false) {
-  if (!props.canViewSchedules) {
+  if (!canReadGotifyConfig.value) {
     gotifyChannels.value = []
     return
   }
@@ -1276,6 +1352,28 @@ async function loadGotifyChannels(silent = false) {
   }
 }
 
+async function refreshCurrentAgentView(silent = false) {
+  const tasks: Promise<unknown>[] = [loadNodes(silent)]
+
+  if (agentPanelTab.value === 'commands') {
+    tasks.push(loadActiveCommands(silent))
+  }
+
+  if (agentPanelTab.value === 'logs') {
+    tasks.push(loadCommands(silent))
+  }
+
+  if (agentPanelTab.value === 'schedules') {
+    tasks.push(loadSchedules(silent), loadGotifyChannels(silent))
+  }
+
+  if (agentPanelTab.value === 'notifications') {
+    tasks.push(loadGotifyChannels(silent))
+  }
+
+  await Promise.all(tasks)
+}
+
 async function refreshAll(silent = false) {
   await Promise.all([loadNodes(silent), loadCommands(silent), loadActiveCommands(silent), loadSchedules(silent)])
 }
@@ -1288,7 +1386,17 @@ function startPolling() {
   }
 
   pollTimer = setInterval(() => {
-    void refreshAll(true)
+    const tasks: Promise<unknown>[] = [loadNodes(true)]
+
+    if (agentPanelTab.value === 'commands') {
+      tasks.push(loadActiveCommands(true))
+    }
+
+    if (agentPanelTab.value === 'logs') {
+      tasks.push(loadCommands(true))
+    }
+
+    void Promise.all(tasks)
   }, 5000)
 }
 
@@ -1315,11 +1423,19 @@ function resetNodeModal() {
 }
 
 function openCreateNodeModal() {
+  if (!props.canManageNodes) {
+    return
+  }
+
   resetNodeModal()
   nodeModal.value.show = true
 }
 
 function openEditNodeModal(node: ManagedNodeItem) {
+  if (!props.canManageNodes) {
+    return
+  }
+
   nodeModal.value = {
     show: true,
     mode: 'edit',
@@ -1333,6 +1449,10 @@ function openEditNodeModal(node: ManagedNodeItem) {
 }
 
 async function submitNodeModal() {
+  if (!props.canManageNodes) {
+    return
+  }
+
   savingNode.value = true
 
   try {
@@ -1408,6 +1528,10 @@ function closeConfirmDialog() {
 }
 
 function confirmToggleNode(node: ManagedNodeItem, nextValue: boolean) {
+  if (!props.canManageNodes) {
+    return
+  }
+
   const nextLabel = nextValue ? '启用' : '停用'
 
   openConfirmDialog(
@@ -1425,6 +1549,10 @@ function confirmToggleNode(node: ManagedNodeItem, nextValue: boolean) {
 }
 
 function confirmRotateKey(node: ManagedNodeItem) {
+  if (!props.canManageNodes) {
+    return
+  }
+
   openConfirmDialog(
     '确认重置节点令牌',
     ['重置后旧令牌会立即失效', `确认重置 ${node.name} (${node.code}) 的令牌`],
@@ -1450,7 +1578,7 @@ function selectNode(node: ManagedNodeItem) {
     scheduleForm.value.nodeId = node.id
   }
 
-  if (props.canViewControl) {
+  if (canViewControlTab.value) {
     agentPanelTab.value = 'control'
     return
   }
@@ -1460,8 +1588,18 @@ function selectNode(node: ManagedNodeItem) {
     return
   }
 
-  if (props.canViewSchedules) {
+  if (canViewScheduleTab.value) {
     agentPanelTab.value = 'schedules'
+    return
+  }
+
+  if (canViewNotificationsTab.value) {
+    agentPanelTab.value = 'notifications'
+    return
+  }
+
+  if (canViewLogsTab.value) {
+    agentPanelTab.value = 'logs'
     return
   }
 
@@ -1569,9 +1707,13 @@ function queueCommand(
         expiresInSeconds: 300,
       })
       pushToast('命令已下发', 'success')
-      if (props.canViewLogs) {
+      if (props.canViewLogHistory) {
         agentPanelTab.value = 'logs'
         await loadCommands(true)
+      } else if (props.canViewRunningCommands) {
+        agentPanelTab.value = 'commands'
+        commandSubTab.value = 'running'
+        await loadActiveCommands(true)
       }
     } catch (error) {
       pushToast((error as Error).message, 'error')
@@ -1645,6 +1787,10 @@ function queueNodeInstruction(commandType: Exclude<NodeActionType, 'docker.start
 }
 
 function queueGroupAction(commandType: Extract<NodeActionType, 'docker.start_group' | 'docker.stop_group' | 'docker.restart_group'>) {
+  if (!props.canViewControlGroups) {
+    return
+  }
+
   const node = requireSelectedNode()
   const group = requireSelectedGroup()
   if (!node || !group) {
@@ -1662,6 +1808,10 @@ function queueGroupAction(commandType: Extract<NodeActionType, 'docker.start_gro
 }
 
 function queueServerAction(commandType: Extract<NodeActionType, 'docker.start_server' | 'docker.stop_server' | 'docker.restart_server' | 'docker.remove_server'>) {
+  if (!props.canViewControlServers) {
+    return
+  }
+
   const node = requireSelectedNode()
   const servers = requireSelectedServers()
   if (!node || !servers) {
@@ -1689,9 +1839,13 @@ function queueServerAction(commandType: Extract<NodeActionType, 'docker.start_se
           })
         }
         pushToast(`已下发 ${servers.length} 条命令`, 'success')
-        if (props.canViewLogs) {
+        if (props.canViewLogHistory) {
           agentPanelTab.value = 'logs'
           await loadCommands(true)
+        } else if (props.canViewRunningCommands) {
+          agentPanelTab.value = 'commands'
+          commandSubTab.value = 'running'
+          await loadActiveCommands(true)
         }
       } catch (error) {
         pushToast((error as Error).message, 'error')
@@ -1741,6 +1895,10 @@ function resolveGotifyChannelNames(channelKeys: string[] | undefined) {
 }
 
 async function openLogModal(command: NodeCommandItem) {
+  if (!props.canViewLogDetails) {
+    return
+  }
+
   logModal.value = {
     show: true,
     command,
@@ -1761,11 +1919,19 @@ async function openLogModal(command: NodeCommandItem) {
 }
 
 function resetScheduleForm() {
+  if (!props.canEditSchedules) {
+    return
+  }
+
   scheduleForm.value = createScheduleForm(selectedScheduleNodeId.value || selectedControlNodeId.value || nodes.value[0]?.id || '')
   scheduleSubTab.value = 'edit'
 }
 
 function fillScheduleForm(schedule: NodeCommandScheduleItem) {
+  if (!props.canEditSchedules) {
+    return
+  }
+
   const monitorServerKey = normalizeOptionalServerKey(schedule.payload?.monitorServerKey) || ''
   const startServerKeys = normalizeSelectedServerKeys(schedule.payload?.startServerKeys)
   const scheduleFields = resolveScheduleFormFields(
@@ -1820,6 +1986,10 @@ function buildSchedulePayload() {
 }
 
 async function saveSchedule() {
+  if (!props.canEditSchedules) {
+    return
+  }
+
   savingSchedule.value = true
 
   try {
@@ -1849,7 +2019,7 @@ async function saveSchedule() {
     selectedScheduleNodeId.value = schedule.nodeId
     fillScheduleForm(schedule)
     scheduleExpandedIds.value = Array.from(new Set([schedule.id, ...scheduleExpandedIds.value]))
-    scheduleSubTab.value = 'list'
+    scheduleSubTab.value = props.canViewScheduleList ? 'list' : 'edit'
     await loadSchedules(true)
   } catch (error) {
     pushToast((error as Error).message, 'error')
@@ -1859,6 +2029,10 @@ async function saveSchedule() {
 }
 
 function confirmDeleteSchedule(schedule: NodeCommandScheduleItem) {
+  if (!props.canEditSchedules) {
+    return
+  }
+
   openConfirmDialog(
     '确认删除定时任务',
     ['删除后不会再自动下发该节点操作', `${schedule.name} · ${commandActionText(schedule.commandType)}`],
@@ -1877,6 +2051,10 @@ function confirmDeleteSchedule(schedule: NodeCommandScheduleItem) {
 }
 
 function confirmToggleSchedule(schedule: NodeCommandScheduleItem, nextValue: boolean) {
+  if (!props.canEditSchedules) {
+    return
+  }
+
   openConfirmDialog(
     nextValue ? '确认启用定时任务' : '确认停用定时任务',
     [nextValue ? '启用后会按设定时间自动下发节点操作' : '停用后不会继续自动下发节点操作', schedule.name],
@@ -1893,6 +2071,10 @@ function confirmToggleSchedule(schedule: NodeCommandScheduleItem, nextValue: boo
 }
 
 function requestCommandCancellation(command: NodeCommandItem, force = false) {
+  if (!props.canViewRunningCommands) {
+    return
+  }
+
   const actionLabel = force ? '强制终止' : '终止'
   const controlState = commandControlState(command)
   const lines = [
@@ -1917,19 +2099,23 @@ function requestCommandCancellation(command: NodeCommandItem, force = false) {
       })
       const nextCommand = data.command as NodeCommandItem
       mergeActiveCommandRecord(nextCommand)
-      if (props.canViewLogs) {
+      if (props.canViewLogHistory) {
         mergeCommandRecord(nextCommand)
       }
       pushToast(force ? '已请求强制终止命令' : '已请求终止命令', 'success')
       await Promise.all([
         loadActiveCommands(true),
-        props.canViewLogs ? loadCommands(true) : Promise.resolve(),
+        props.canViewLogHistory ? loadCommands(true) : Promise.resolve(),
       ])
     },
   )
 }
 
 function requestBatchCommandCancellation(force = false) {
+  if (!props.canViewRunningCommands) {
+    return
+  }
+
   const selectedCommands = selectedVisibleActiveCommands.value
 
   if (!selectedCommands.length) {
@@ -1967,7 +2153,7 @@ function requestBatchCommandCancellation(force = false) {
 
       nextCommands.forEach((command) => {
         mergeActiveCommandRecord(command)
-        if (props.canViewLogs) {
+        if (props.canViewLogHistory) {
           mergeCommandRecord(command)
         }
       })
@@ -1986,7 +2172,7 @@ function requestBatchCommandCancellation(force = false) {
 
       await Promise.all([
         loadActiveCommands(true),
-        props.canViewLogs ? loadCommands(true) : Promise.resolve(),
+        props.canViewLogHistory ? loadCommands(true) : Promise.resolve(),
       ])
     },
   )
@@ -2004,11 +2190,19 @@ watch(
       return
     }
 
-    void refreshAll()
-    void loadGotifyChannels(true)
+    void refreshCurrentAgentView()
     startPolling()
   },
   { immediate: true },
+)
+
+watch(
+  () => agentPanelTab.value,
+  () => {
+    if (props.active) {
+      void refreshCurrentAgentView()
+    }
+  },
 )
 
 watch(
@@ -2121,16 +2315,24 @@ watch(
 )
 
 watch(
-  () => [props.canViewNodes, props.canViewControl, props.canViewCommands, props.canViewRcon, props.canViewSchedules, props.canViewLogs, agentPanelTab.value] as const,
+  () => [
+    canViewNodesTab.value,
+    canViewControlTab.value,
+    canViewCommandPanel.value,
+    canViewScheduleTab.value,
+    canViewNotificationsTab.value,
+    canViewLogsTab.value,
+    agentPanelTab.value,
+  ] as const,
   () => {
     const current = agentPanelTab.value
     const allowed =
-      (current === 'nodes' && props.canViewNodes)
-      || (current === 'control' && props.canViewControl)
+      (current === 'nodes' && canViewNodesTab.value)
+      || (current === 'control' && canViewControlTab.value)
       || (current === 'commands' && canViewCommandPanel.value)
-      || (current === 'schedules' && props.canViewSchedules)
-      || (current === 'notifications' && props.canViewSchedules)
-      || (current === 'logs' && props.canViewLogs)
+      || (current === 'schedules' && canViewScheduleTab.value)
+      || (current === 'notifications' && canViewNotificationsTab.value)
+      || (current === 'logs' && canViewLogsTab.value)
 
     if (!allowed) {
       agentPanelTab.value = firstAvailableAgentTab.value
@@ -2140,19 +2342,52 @@ watch(
 )
 
 watch(
-  () => [props.canViewCommands, props.canViewRcon, commandSubTab.value] as const,
+  () => [props.canViewCommandActions, props.canViewRcon, props.canViewRunningCommands, commandSubTab.value] as const,
   () => {
     const current = commandSubTab.value
     const allowed =
-      (current === 'actions' && props.canViewCommands)
+      (current === 'actions' && props.canViewCommandActions)
       || (current === 'rcon' && props.canViewRcon)
-      || (current === 'running' && props.canViewCommands)
+      || (current === 'running' && props.canViewRunningCommands)
 
     if (!allowed) {
       commandSubTab.value = firstAvailableCommandSubTab.value
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => [props.canEditSchedules, props.canViewScheduleList, scheduleSubTab.value] as const,
+  () => {
+    const current = scheduleSubTab.value
+    const allowed =
+      (current === 'edit' && props.canEditSchedules)
+      || (current === 'list' && props.canViewScheduleList)
+
+    if (!allowed) {
+      scheduleSubTab.value = firstAvailableScheduleSubTab.value
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => scheduleSubTab.value,
+  () => {
+    if (!props.active || agentPanelTab.value !== 'schedules') {
+      return
+    }
+
+    if (scheduleSubTab.value === 'list' && props.canViewScheduleList) {
+      void loadSchedules()
+      return
+    }
+
+    if (scheduleSubTab.value === 'edit' && canReadGotifyConfig.value) {
+      void loadGotifyChannels(true)
+    }
+  },
 )
 
 watch(
@@ -2199,78 +2434,78 @@ onBeforeUnmount(() => {
 
     <Transition name="console-panel-switch" mode="out-in">
       <div :key="agentPanelTab" class="agent-panel-stack">
-        <ConsolePanelCard v-if="agentPanelTab === 'nodes' && props.canViewNodes" title="节点管理" description="统一查看节点状态、基础信息和启停配置。">
-        <template #header-extra>
-          <NSpace size="small">
-            <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新列表" @click="refreshAll()">↻</NButton>
-            <NButton type="primary" @click="openCreateNodeModal">新增节点</NButton>
-          </NSpace>
-        </template>
+        <ConsolePanelCard v-if="agentPanelTab === 'nodes' && canViewNodesTab" title="节点管理" description="统一查看节点状态、基础信息和启停配置。">
+          <template #header-extra>
+            <NSpace size="small">
+              <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新列表" @click="refreshAll()">↻</NButton>
+              <NButton v-if="props.canManageNodes" type="primary" @click="openCreateNodeModal">新增节点</NButton>
+            </NSpace>
+          </template>
 
-        <div v-if="loadingNodes && !nodes.length" class="hero-note min-h-[240px]">
-          <NSpin size="large" />
-        </div>
+          <div v-if="loadingNodes && !nodes.length" class="hero-note min-h-[240px]">
+            <NSpin size="large" />
+          </div>
 
-        <div v-else-if="nodes.length" class="agent-node-list">
-          <article
-            v-for="node in nodes"
-            :key="node.id"
-            class="agent-node-card"
-            :class="[nodeCardStateClass(node), { 'is-active': selectedControlNodeId === node.id }]"
-            @click="selectNode(node)"
-          >
-            <div class="agent-node-card__top">
-              <div class="agent-node-card__title">
-                <strong>{{ node.name }}</strong>
-                <span>{{ node.code }}</span>
+          <div v-else-if="nodes.length" class="agent-node-list">
+            <article
+              v-for="node in nodes"
+              :key="node.id"
+              class="agent-node-card"
+              :class="[nodeCardStateClass(node), { 'is-active': selectedControlNodeId === node.id }]"
+              @click="selectNode(node)"
+            >
+              <div class="agent-node-card__top">
+                <div class="agent-node-card__title">
+                  <strong>{{ node.name }}</strong>
+                  <span>{{ node.code }}</span>
+                </div>
+                <NTag round :type="nodeStatusType(node.status)">
+                  {{ node.status }}
+                </NTag>
               </div>
-              <NTag round :type="nodeStatusType(node.status)">
-                {{ node.status }}
-              </NTag>
-            </div>
 
-            <div class="agent-node-card__meta">
-              <div>
-                <span>主机</span>
-                <strong>{{ node.host || '-' }}</strong>
-              </div>
-              <div>
-                <span>服务器</span>
-                <strong>{{ nodeServerCount(node) }}</strong>
-              </div>
-              <div>
-                <span>运行中</span>
-                <strong>{{ nodeRunningCount(node) }}</strong>
-              </div>
-              <div>
-                <span>最近心跳</span>
-                <strong>{{ formatRelative(node.lastSeenAt) }}</strong>
-              </div>
-            </div>
-
-            <div class="agent-node-card__heartbeat">
-              <span>分组 {{ nodeGroupCount(node) }}</span>
-              <span>版本 {{ node.agentVersion || '-' }}</span>
-              <span>IP {{ node.lastIp || '-' }}</span>
-              <span>主机名 {{ node.lastHeartbeat?.hostname || '-' }}</span>
-              <span v-if="node.note" class="agent-node-card__note-chip">{{ node.note }}</span>
-            </div>
-
-            <div class="agent-node-card__footer">
-              <div class="agent-node-card__actions" @click.stop>
-                  <NButton secondary class="console-button-tone--warning" @click="openEditNodeModal(node)">编辑</NButton>
-                  <NButton secondary class="console-button-tone--warning" @click="confirmRotateKey(node)">重置令牌</NButton>
-                <div class="agent-node-card__switch">
-                  <span>{{ node.isActive ? '已启用' : '已停用' }}</span>
-                  <NSwitch
-                    :value="node.isActive"
-                    @update:value="(value) => confirmToggleNode(node, value)"
-                  />
+              <div class="agent-node-card__meta">
+                <div>
+                  <span>主机</span>
+                  <strong>{{ node.host || '-' }}</strong>
+                </div>
+                <div>
+                  <span>服务器</span>
+                  <strong>{{ nodeServerCount(node) }}</strong>
+                </div>
+                <div>
+                  <span>运行中</span>
+                  <strong>{{ nodeRunningCount(node) }}</strong>
+                </div>
+                <div>
+                  <span>最近心跳</span>
+                  <strong>{{ formatRelative(node.lastSeenAt) }}</strong>
                 </div>
               </div>
-            </div>
-          </article>
-        </div>
+
+              <div class="agent-node-card__heartbeat">
+                <span>分组 {{ nodeGroupCount(node) }}</span>
+                <span>版本 {{ node.agentVersion || '-' }}</span>
+                <span>IP {{ node.lastIp || '-' }}</span>
+                <span>主机名 {{ node.lastHeartbeat?.hostname || '-' }}</span>
+                <span v-if="node.note" class="agent-node-card__note-chip">{{ node.note }}</span>
+              </div>
+
+              <div v-if="props.canManageNodes" class="agent-node-card__footer">
+                <div class="agent-node-card__actions" @click.stop>
+                  <NButton secondary class="console-button-tone--warning" @click="openEditNodeModal(node)">编辑</NButton>
+                  <NButton secondary class="console-button-tone--warning" @click="confirmRotateKey(node)">重置令牌</NButton>
+                  <div class="agent-node-card__switch">
+                    <span>{{ node.isActive ? '已启用' : '已停用' }}</span>
+                    <NSwitch
+                      :value="node.isActive"
+                      @update:value="(value) => confirmToggleNode(node, value)"
+                    />
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
 
           <div v-else class="hero-note min-h-[240px]">
             <div class="hero-note__inner">
@@ -2280,7 +2515,7 @@ onBeforeUnmount(() => {
           </div>
         </ConsolePanelCard>
 
-        <ConsolePanelCard v-else-if="agentPanelTab === 'control' && props.canViewControl" title="批量操作" description="按节点、分组和勾选服务器执行统一的批量操作。">
+        <ConsolePanelCard v-else-if="agentPanelTab === 'control' && canViewControlTab" title="批量操作" description="按节点、分组和勾选服务器执行统一的批量操作。">
           <div v-if="selectedNode" class="agent-control-stack">
             <div class="agent-selected-node-banner console-panel-banner">
               <div class="console-panel-banner__copy">
@@ -2321,7 +2556,7 @@ onBeforeUnmount(() => {
             </section>
 
             <div class="agent-control-grid">
-              <section class="agent-action-section">
+              <section v-if="props.canViewControlGroups" class="agent-action-section">
                 <div class="agent-action-section__header">
                   <strong>分组操作</strong>
                   <span>
@@ -2339,7 +2574,7 @@ onBeforeUnmount(() => {
                 </div>
               </section>
 
-              <section class="agent-action-section">
+              <section v-if="props.canViewControlServers" class="agent-action-section">
                 <div class="agent-action-section__header">
                 <strong>批量操作</strong>
                   <span>
@@ -2354,12 +2589,12 @@ onBeforeUnmount(() => {
                   <NButton secondary class="console-button-tone--success" :disabled="!selectedServers.length" @click="queueServerAction('docker.start_server')">批量启动</NButton>
                   <NButton secondary class="console-button-tone--danger" :disabled="!selectedServers.length" @click="queueServerAction('docker.stop_server')">批量强停</NButton>
                   <NButton secondary class="console-button-tone--warning" :disabled="!selectedServers.length" @click="queueServerAction('docker.restart_server')">批量重启</NButton>
-                  <NButton type="error" ghost class="console-button-tone--danger" :disabled="!selectedServers.length" @click="queueServerAction('docker.remove_server')">批量删除</NButton>
+                  <NButton secondary class="console-button-tone--danger" :disabled="!selectedServers.length" @click="queueServerAction('docker.remove_server')">批量删除</NButton>
                 </div>
               </section>
             </div>
 
-            <section class="agent-action-section">
+            <section v-if="props.canViewControlServers" class="agent-action-section">
               <div class="agent-action-section__header">
                 <strong>服务器列表</strong>
                 <span>按分组筛选后直接勾选服务器, 再执行批量操作</span>
@@ -2487,7 +2722,7 @@ onBeforeUnmount(() => {
                       <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
                       <NButton secondary class="console-button-tone--neutral-strong" @click="queueMaintenanceCommand('node.check_update')">检查更新</NButton>
                       <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
-                      <NButton type="error" ghost class="console-button-tone--danger" @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
+                      <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
                     </div>
                   </section>
 
@@ -2682,7 +2917,7 @@ onBeforeUnmount(() => {
 
                       <div class="agent-command-card__actions">
                         <NButton secondary @click="openCommandDetails(command)">查看详情</NButton>
-                        <NButton v-if="props.canViewLogs" secondary @click="openLogModal(command)">查看日志</NButton>
+                        <NButton v-if="props.canViewLogDetails" secondary @click="openLogModal(command)">查看日志</NButton>
                         <NButton secondary @click="copyText(JSON.stringify(command.payload || {}, null, 2), '命令参数')">
                           复制参数
                         </NButton>
@@ -2725,12 +2960,12 @@ onBeforeUnmount(() => {
           </div>
         </ConsolePanelCard>
 
-        <ConsolePanelCard v-else-if="agentPanelTab === 'schedules' && props.canViewSchedules" title="定时任务" description="把任务编辑和任务列表拆开，创建后列表只做本地筛选，不再因为筛选请求把新任务刷没。">
+        <ConsolePanelCard v-else-if="agentPanelTab === 'schedules' && canViewScheduleTab" title="定时任务" description="把任务编辑和任务列表拆开，创建后列表只做本地筛选，不再因为筛选请求把新任务刷没。">
           <div class="agent-panel-stack">
             <ConsoleSegmentedTabs v-model="scheduleSubTab" :options="scheduleSubTabOptions" />
 
             <Transition name="console-panel-switch" mode="out-in">
-              <section v-if="scheduleSubTab === 'edit'" key="schedule-edit" class="agent-command-section agent-schedule-editor">
+              <section v-if="scheduleSubTab === 'edit' && props.canEditSchedules" key="schedule-edit" class="agent-command-section agent-schedule-editor">
                 <div class="agent-action-section__header">
                   <strong>{{ scheduleForm.id ? '编辑任务' : '新增任务' }}</strong>
                   <span>支持按节点配置每天、每 N 天、每 N 小时窗口等自动执行规则</span>
@@ -2865,7 +3100,7 @@ onBeforeUnmount(() => {
                   </NFormItem>
                   <NFormItem label="操作">
                     <div class="console-inline-control">
-                      <NButton secondary class="console-button-tone--neutral-strong" @click="resetScheduleForm">新建任务</NButton>
+                      <NButton v-if="props.canEditSchedules" secondary class="console-button-tone--neutral-strong" @click="resetScheduleForm">新建任务</NButton>
                     </div>
                   </NFormItem>
                 </NForm>
@@ -2932,11 +3167,11 @@ onBeforeUnmount(() => {
                       </div>
 
                       <div class="agent-command-card__actions">
-                        <NButton secondary class="console-button-tone--neutral-strong" @click="fillScheduleForm(schedule)">载入编辑</NButton>
-                        <NButton secondary class="console-button-tone--neutral-strong" @click="confirmToggleSchedule(schedule, !schedule.isActive)">
+                        <NButton v-if="props.canEditSchedules" secondary class="console-button-tone--neutral-strong" @click="fillScheduleForm(schedule)">载入编辑</NButton>
+                        <NButton v-if="props.canEditSchedules" secondary class="console-button-tone--neutral-strong" @click="confirmToggleSchedule(schedule, !schedule.isActive)">
                           {{ schedule.isActive ? '停用' : '启用' }}
                         </NButton>
-                        <NButton secondary class="console-button-tone--danger" @click="confirmDeleteSchedule(schedule)">删除</NButton>
+                        <NButton v-if="props.canEditSchedules" secondary class="console-button-tone--danger" @click="confirmDeleteSchedule(schedule)">删除</NButton>
                       </div>
                     </div>
                   </article>
@@ -2956,12 +3191,15 @@ onBeforeUnmount(() => {
         </ConsolePanelCard>
 
         <GotifyNotificationPanel
-          v-else-if="agentPanelTab === 'notifications' && props.canViewSchedules"
+          v-else-if="agentPanelTab === 'notifications' && canViewNotificationsTab"
           :active="agentPanelTab === 'notifications'"
+          :can-create="props.canCreateNotifications"
+          :can-manage="props.canManageNotifications"
+          :can-test="props.canTestNotifications"
           @updated="handleGotifyConfigUpdated"
         />
 
-        <ConsolePanelCard v-else-if="props.canViewLogs" title="日志管理" description="统一查看命令历史、结果摘要与执行日志。">
+        <ConsolePanelCard v-else-if="canViewLogsTab" title="日志管理" description="统一查看命令历史、结果摘要与执行日志。">
           <div class="console-subsection agent-log-filter-panel">
             <NForm label-placement="top" class="console-field-grid cols-3">
               <NFormItem label="节点筛选">
@@ -3031,7 +3269,7 @@ onBeforeUnmount(() => {
 
                     <div class="agent-command-card__actions">
                       <NButton secondary @click="openCommandDetails(command)">查看详情</NButton>
-                      <NButton secondary @click="openLogModal(command)">查看日志</NButton>
+                      <NButton v-if="props.canViewLogDetails" secondary @click="openLogModal(command)">查看日志</NButton>
                       <NButton secondary @click="copyText(JSON.stringify(command.result || command.payload || {}, null, 2), '命令详情')">
                         复制结果
                       </NButton>
