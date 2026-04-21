@@ -2953,6 +2953,12 @@ onBeforeUnmount(() => {
                       <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
                       <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
                     </div>
+                    <div class="agent-command-card__summary">
+                      验证游戏完整性会先尝试读取当前 buildid；如果本地没有 manifest，会先打印“没有 manifest”再继续。随后会强制删除 Agent YAML 里配置的全部容器，清掉 steamapps 里的 appmanifest、downloading、temp，执行 steamcmd app_update validate，并补回 gameinfo.gi 里的 Metamod 路径。
+                    </div>
+                    <div class="agent-command-card__summary">
+                      强制清理容器只会对 Agent YAML 里配置的容器执行整批强制删除；不会读取版本，不会执行 validate，也不会删除游戏目录和挂载数据。
+                    </div>
                   </section>
 
                   <section class="agent-command-section">
@@ -2970,10 +2976,13 @@ onBeforeUnmount(() => {
                       读取当前版本 / 读取最新版本都不会停服；读取最新版本只会读取远端 buildid。
                     </div>
                     <div class="agent-command-card__summary">
-                      检查更新会先比较版本, 只有存在差异时才会停服、执行 validate、跑崩溃检查，并在检查成功后启动你选中的服务器。
+                      检查更新会先尝试读取本地 buildid；如果本地没有 manifest，会先打印“没有 manifest”并直接进入“删容器 -> 清理 steamapps -> steamcmd validate -> 崩溃检查”的完整流程。只有本地 manifest 存在时，才会继续读取远端 buildid 并按版本差异决定是否停服。
                     </div>
                     <div class="agent-command-card__summary">
-                      崩溃检查会直接重建并启动所选监控容器，只返回是否崩溃；崩溃检查后启动会在成功后再启动后续服务器。
+                      崩溃检查会先强制删除默认监控服容器，再重新创建并启动它；随后持续轮询容器状态和 RestartCount，在稳定运行达到阈值前只要频繁重启或长时间没恢复，就会判定失败并清掉监控容器。
+                    </div>
+                    <div class="agent-command-card__summary">
+                      崩溃检查后启动会先完整执行一遍崩溃检查；只有监控服稳定通过后，才启动你这里勾选的服务器。不勾选时会按 Agent YAML 里 start_after_monitor 的配置自动启动；如果都没配，就默认启动除监控服外的其它服。
                     </div>
                   </section>
                 </div>
@@ -3559,7 +3568,7 @@ onBeforeUnmount(() => {
         <pre class="agent-issued-key__code">{{ issuedKeyModal.apiKey }}</pre>
       </div>
 
-      <NSpace justify="end">
+      <NSpace justify="end" class="agent-issued-key__actions">
         <NButton secondary @click="copyText(issuedKeyModal.apiKey, 'Agent 令牌')">复制令牌</NButton>
         <NButton type="primary" @click="issuedKeyModal.show = false">我知道了</NButton>
       </NSpace>
@@ -4313,6 +4322,10 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   color: var(--app-text-muted);
   font-size: 13px;
+}
+
+.agent-issued-key__actions {
+  margin-top: 14px;
 }
 
 .agent-issued-key__code,
