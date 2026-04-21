@@ -88,6 +88,7 @@ type ConsoleLoadKey =
 
 const officialWhitelistProductCode = 'kepcs_whitelist_single'
 const officialWhitelistDatabase = 'cs2_kepcore'
+const CONSOLE_OVERVIEW_REFRESH_INTERVAL_MS = 15 * 1000
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -1592,8 +1593,12 @@ function startOverviewRefresh() {
       return
     }
 
+    if (document.visibilityState === 'hidden') {
+      return
+    }
+
     void ensureConsoleOverviewLoaded(true, true)
-  }, 1000)
+  }, CONSOLE_OVERVIEW_REFRESH_INTERVAL_MS)
 }
 
 function stopOverviewRefresh() {
