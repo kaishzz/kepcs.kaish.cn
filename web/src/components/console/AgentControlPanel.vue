@@ -16,7 +16,7 @@ import {
   NSwitch,
   NTag,
 } from 'naive-ui'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { http } from '../../lib/api'
 import { CONSOLE_API_BASE } from '../../lib/console'
@@ -216,7 +216,13 @@ const confirmState = ref({
 })
 
 let pendingConfirmAction: (() => Promise<void>) | null = null
+let pendingConfirmBehavior: {
+  closeOnConfirm?: boolean
+  backgroundNotice?: string
+} | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let logPollTimer: ReturnType<typeof setInterval> | null = null
+const logListRef = ref<HTMLElement | null>(null)
 // Polling and post-save refresh can overlap; only the newest schedule response should win.
 let scheduleLoadRequestCursor = 0
 let visibleScheduleLoadCount = 0
@@ -701,6 +707,10 @@ function commandStatusType(status?: NodeCommandItem['status']) {
   if (status === 'FAILED' || status === 'CANCELLED' || status === 'EXPIRED') return 'error'
   if (status === 'RUNNING' || status === 'CLAIMED') return 'warning'
   return 'default'
+}
+
+function isCommandInProgress(status?: NodeCommandItem['status']) {
+  return status === 'PENDING' || status === 'CLAIMED' || status === 'RUNNING'
 }
 
 function normalizeServerState(server: ManagedNodeHeartbeatServerItem) {
@@ -1492,8 +1502,18 @@ async function submitNodeModal() {
   }
 }
 
-function openConfirmDialog(title: string, lines: string[], positiveText: string, action: () => Promise<void>) {
+function openConfirmDialog(
+  title: string,
+  lines: string[],
+  positiveText: string,
+  action: () => Promise<void>,
+  behavior: {
+    closeOnConfirm?: boolean
+    backgroundNotice?: string
+  } = {},
+) {
   pendingConfirmAction = action
+  pendingConfirmBehavior = behavior
   confirmState.value = {
     show: true,
     title,
@@ -1508,14 +1528,32 @@ async function runConfirmAction() {
     return
   }
 
+  const action = pendingConfirmAction
+  const behavior = pendingConfirmBehavior
+
+  if (behavior?.closeOnConfirm) {
+    closeConfirmDialog()
+    if (behavior.backgroundNotice) {
+      pushToast(behavior.backgroundNotice, 'info')
+    }
+
+    try {
+      await action()
+    } catch (error) {
+      pushToast((error as Error).message, 'error')
+    }
+    return
+  }
+
   confirmState.value.loading = true
 
   try {
-    await pendingConfirmAction()
+    await action()
     confirmState.value.show = false
     pendingConfirmAction = null
-  } catch {
-    // Keep the modal open so the user can see the error toast.
+    pendingConfirmBehavior = null
+  } catch (error) {
+    pushToast((error as Error).message, 'error')
   } finally {
     confirmState.value.loading = false
   }
@@ -1525,6 +1563,7 @@ function closeConfirmDialog() {
   confirmState.value.show = false
   confirmState.value.loading = false
   pendingConfirmAction = null
+  pendingConfirmBehavior = null
 }
 
 function confirmToggleNode(node: ManagedNodeItem, nextValue: boolean) {
@@ -1693,33 +1732,44 @@ function queueCommand(
   title: string,
   lines: string[],
   positiveText: string,
+  options: {
+    openLogAfterCreate?: boolean
+    closeOnConfirm?: boolean
+    backgroundNotice?: string
+  } = {},
 ) {
   const node = requireSelectedNode()
   if (!node) {
     return
   }
 
-  openConfirmDialog(title, lines, positiveText, async () => {
-    try {
-      await http.post(`${CONSOLE_API_BASE}/agent/nodes/${encodeURIComponent(node.id)}/commands`, {
+  openConfirmDialog(
+    title,
+    lines,
+    positiveText,
+    async () => {
+      const { data } = await http.post(`${CONSOLE_API_BASE}/agent/nodes/${encodeURIComponent(node.id)}/commands`, {
         commandType,
         payload,
         expiresInSeconds: 300,
       })
-      pushToast('命令已下发', 'success')
-      if (props.canViewLogHistory) {
-        agentPanelTab.value = 'logs'
-        await loadCommands(true)
-      } else if (props.canViewRunningCommands) {
-        agentPanelTab.value = 'commands'
-        commandSubTab.value = 'running'
-        await loadActiveCommands(true)
+      const command = data.command as NodeCommandItem | undefined
+      if (command) {
+        mergeActiveCommandRecord(command)
+        if (props.canViewLogHistory) {
+          mergeCommandRecord(command)
+        }
       }
-    } catch (error) {
-      pushToast((error as Error).message, 'error')
-      throw error
-    }
-  })
+      pushToast('命令已下发', 'success')
+      if (options.openLogAfterCreate && command && props.canViewLogDetails) {
+        await openLogModal(command)
+      }
+    },
+    {
+      closeOnConfirm: options.closeOnConfirm,
+      backgroundNotice: options.backgroundNotice,
+    },
+  )
 }
 
 function queueNodeInstruction(commandType: Exclude<NodeActionType, 'docker.start_group' | 'docker.stop_group' | 'docker.restart_group' | 'docker.start_server' | 'docker.stop_server' | 'docker.restart_server' | 'docker.remove_server'>, payload: Record<string, unknown> = {}) {
@@ -1783,6 +1833,19 @@ function queueNodeInstruction(commandType: Exclude<NodeActionType, 'docker.start
     `确认${actionText}`,
     lines,
     actionText,
+    {
+      closeOnConfirm: true,
+      backgroundNotice: `已转入后台执行${actionText}，可继续操作其他内容。`,
+      openLogAfterCreate:
+        props.canViewLogDetails
+        && (
+          commandType === 'node.check_update'
+          || commandType === 'node.check_validate'
+          || commandType === 'node.get_nowver'
+          || commandType === 'node.monitor_check'
+          || commandType === 'node.monitor_start'
+        ),
+    },
   )
 }
 
@@ -1804,6 +1867,10 @@ function queueGroupAction(commandType: Extract<NodeActionType, 'docker.start_gro
     `确认${actionText}`,
     [`目标节点: ${node.name}`, `确认对分组 ${group} 执行${actionText}`],
     actionText,
+    {
+      closeOnConfirm: true,
+      backgroundNotice: `已转入后台执行${actionText}，可继续操作其他内容。`,
+    },
   )
 }
 
@@ -1830,27 +1897,48 @@ function queueServerAction(commandType: Extract<NodeActionType, 'docker.start_se
     ],
     actionText,
     async () => {
-      try {
-        for (const server of servers) {
-          await http.post(`${CONSOLE_API_BASE}/agent/nodes/${encodeURIComponent(node.id)}/commands`, {
+      const results = await Promise.allSettled(
+        servers.map(async (server) => {
+          const { data } = await http.post(`${CONSOLE_API_BASE}/agent/nodes/${encodeURIComponent(node.id)}/commands`, {
             commandType,
             payload: { key: server.key },
             expiresInSeconds: 300,
           })
-        }
-        pushToast(`已下发 ${servers.length} 条命令`, 'success')
+          return data.command as NodeCommandItem | undefined
+        }),
+      )
+
+      const createdCommands = results
+        .filter((item): item is PromiseFulfilledResult<NodeCommandItem | undefined> => item.status === 'fulfilled')
+        .map(item => item.value)
+        .filter((item): item is NodeCommandItem => Boolean(item))
+
+      createdCommands.forEach((command) => {
+        mergeActiveCommandRecord(command)
         if (props.canViewLogHistory) {
-          agentPanelTab.value = 'logs'
-          await loadCommands(true)
-        } else if (props.canViewRunningCommands) {
-          agentPanelTab.value = 'commands'
-          commandSubTab.value = 'running'
-          await loadActiveCommands(true)
+          mergeCommandRecord(command)
         }
-      } catch (error) {
-        pushToast((error as Error).message, 'error')
-        throw error
+      })
+
+      const failedResults = results.filter((item): item is PromiseRejectedResult => item.status === 'rejected')
+      if (!createdCommands.length && failedResults.length) {
+        throw failedResults[0].reason
       }
+
+      pushToast(
+        failedResults.length
+          ? `已下发 ${createdCommands.length} 条命令，另有 ${failedResults.length} 条未提交成功`
+          : `已下发 ${createdCommands.length} 条命令`,
+        'success',
+      )
+
+      if (failedResults.length) {
+        pushToast(`有 ${failedResults.length} 条命令提交失败，请稍后重试。`, 'error')
+      }
+    },
+    {
+      closeOnConfirm: true,
+      backgroundNotice: `正在后台下发 ${servers.length} 条命令，可继续操作其他内容。`,
     },
   )
 }
@@ -1894,6 +1982,113 @@ function resolveGotifyChannelNames(channelKeys: string[] | undefined) {
     .filter(Boolean)
 }
 
+const isLogModalLive = computed(() =>
+  Boolean(logModal.value.show && logModal.value.command && isCommandInProgress(logModal.value.command.status)),
+)
+
+const logModalHint = computed(() =>
+  isLogModalLive.value
+    ? '运行中，日志会自动刷新并跟随到最新输出。'
+    : '命令已结束，可手动刷新查看完整执行输出。',
+)
+
+function stopLogPolling() {
+  if (!logPollTimer) {
+    return
+  }
+
+  clearInterval(logPollTimer)
+  logPollTimer = null
+}
+
+function syncLogPolling() {
+  if (!props.active || !logModal.value.show || !logModal.value.command || !isCommandInProgress(logModal.value.command.status)) {
+    stopLogPolling()
+    return
+  }
+
+  if (logPollTimer) {
+    return
+  }
+
+  logPollTimer = setInterval(() => {
+    void refreshLogModal(true)
+  }, 1500)
+}
+
+function isLogViewerNearBottom() {
+  const element = logListRef.value
+  if (!element) {
+    return true
+  }
+
+  const remaining = element.scrollHeight - element.scrollTop - element.clientHeight
+  return remaining <= 72
+}
+
+function scrollLogViewerToBottom(force = false) {
+  nextTick(() => {
+    const element = logListRef.value
+    if (!element) {
+      return
+    }
+
+    if (force || isLogViewerNearBottom()) {
+      element.scrollTop = element.scrollHeight
+    }
+  })
+}
+
+async function refreshLogModal(silent = false) {
+  const currentCommand = logModal.value.command
+  if (!logModal.value.show || !currentCommand) {
+    stopLogPolling()
+    return
+  }
+
+  if (!silent) {
+    loadingLogs.value = true
+  }
+
+  const shouldStickToBottom = isLogViewerNearBottom()
+
+  try {
+    const [{ data: commandData }, { data: logsData }] = await Promise.all([
+      http.get(`${CONSOLE_API_BASE}/agent/commands/${encodeURIComponent(currentCommand.id)}`),
+      http.get(`${CONSOLE_API_BASE}/agent/commands/${encodeURIComponent(currentCommand.id)}/logs`, {
+        params: { limit: 1000 },
+      }),
+    ])
+
+    const nextCommand = (commandData.command || currentCommand) as NodeCommandItem
+    const nextLogs = Array.isArray(logsData.logs) ? logsData.logs as NodeCommandLogItem[] : []
+
+    logModal.value = {
+      show: true,
+      command: nextCommand,
+    }
+    commandLogs.value = nextLogs
+    mergeActiveCommandRecord(nextCommand)
+    if (props.canViewLogHistory) {
+      mergeCommandRecord(nextCommand)
+    }
+    if (shouldStickToBottom || isCommandInProgress(nextCommand.status)) {
+      scrollLogViewerToBottom(true)
+    }
+    syncLogPolling()
+  } catch (error) {
+    if (!silent) {
+      pushToast((error as Error).message, 'error')
+      logModal.value.show = false
+    }
+    stopLogPolling()
+  } finally {
+    if (!silent) {
+      loadingLogs.value = false
+    }
+  }
+}
+
 async function openLogModal(command: NodeCommandItem) {
   if (!props.canViewLogDetails) {
     return
@@ -1903,19 +2098,8 @@ async function openLogModal(command: NodeCommandItem) {
     show: true,
     command,
   }
-  loadingLogs.value = true
-
-  try {
-    const { data } = await http.get(`${CONSOLE_API_BASE}/agent/commands/${encodeURIComponent(command.id)}/logs`, {
-      params: { limit: 500 },
-    })
-    commandLogs.value = data.logs || []
-  } catch (error) {
-    pushToast((error as Error).message, 'error')
-    logModal.value.show = false
-  } finally {
-    loadingLogs.value = false
-  }
+  commandLogs.value = []
+  await refreshLogModal(false)
 }
 
 function resetScheduleForm() {
@@ -2108,6 +2292,12 @@ function requestCommandCancellation(command: NodeCommandItem, force = false) {
         props.canViewLogHistory ? loadCommands(true) : Promise.resolve(),
       ])
     },
+    {
+      closeOnConfirm: true,
+      backgroundNotice: force
+        ? '强制终止请求已转入后台提交，可继续操作其他内容。'
+        : '终止请求已转入后台提交，可继续操作其他内容。',
+    },
   )
 }
 
@@ -2175,6 +2365,12 @@ function requestBatchCommandCancellation(force = false) {
         props.canViewLogHistory ? loadCommands(true) : Promise.resolve(),
       ])
     },
+    {
+      closeOnConfirm: true,
+      backgroundNotice: force
+        ? `正在后台提交 ${selectedCommands.length} 条强制终止请求，可继续操作其他内容。`
+        : `正在后台提交 ${selectedCommands.length} 条终止请求，可继续操作其他内容。`,
+    },
   )
 }
 
@@ -2187,11 +2383,13 @@ watch(
   (active) => {
     if (!active) {
       stopPolling()
+      stopLogPolling()
       return
     }
 
     void refreshCurrentAgentView()
     startPolling()
+    syncLogPolling()
   },
   { immediate: true },
 )
@@ -2421,8 +2619,23 @@ watch(
   },
 )
 
+watch(
+  () => [logModal.value.show, logModal.value.command?.id, logModal.value.command?.status] as const,
+  ([show]) => {
+    if (!show) {
+      stopLogPolling()
+      commandLogs.value = []
+      loadingLogs.value = false
+      return
+    }
+
+    syncLogPolling()
+  },
+)
+
 onBeforeUnmount(() => {
   stopPolling()
+  stopLogPolling()
 })
 </script>
 
@@ -3511,11 +3724,19 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <div class="agent-log-toolbar">
+            <div class="agent-log-toolbar__status">
+              <span class="agent-log-toolbar__dot" :class="{ 'is-live': isLogModalLive }" />
+              <span>{{ logModalHint }}</span>
+            </div>
+            <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新日志" @click="refreshLogModal()">↻</NButton>
+          </div>
+
           <div v-if="loadingLogs" class="hero-note min-h-[240px]">
             <NSpin size="large" />
           </div>
 
-          <div v-else-if="commandLogs.length" class="agent-log-list">
+          <div v-else-if="commandLogs.length" ref="logListRef" class="agent-log-list agent-log-list--terminal">
             <article v-for="log in commandLogs" :key="log.id" class="agent-log-item">
               <div class="agent-log-item__meta">
                 <span>{{ formatDateTime(log.createdAt) }}</span>
@@ -3635,6 +3856,36 @@ onBeforeUnmount(() => {
 .agent-log-filter-panel,
 .agent-log-history-panel {
   gap: 14px;
+}
+
+.agent-log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-log-toolbar__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.agent-log-toolbar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  flex: none;
+}
+
+.agent-log-toolbar__dot.is-live {
+  background: rgb(99, 226, 182);
+  box-shadow: 0 0 0 4px rgba(99, 226, 182, 0.14);
 }
 
 .agent-command-section {
@@ -3945,6 +4196,18 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.agent-log-list--terminal {
+  max-height: 440px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid rgba(81, 96, 122, 0.42);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(17, 23, 37, 0.96), rgba(10, 14, 24, 0.98)),
+    radial-gradient(circle at top, rgba(99, 226, 182, 0.08), transparent 42%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
 .agent-command-card__summary,
 .agent-detail-section__body {
   min-height: var(--app-console-summary-min-height);
@@ -4030,8 +4293,18 @@ onBeforeUnmount(() => {
   word-break: break-word;
 }
 
+.agent-log-item__message {
+  margin-top: 10px;
+  background: rgba(5, 8, 15, 0.68);
+  border-color: rgba(81, 96, 122, 0.28);
+  font-family: 'Cascadia Mono', 'Consolas', 'SFMono-Regular', monospace;
+  color: #e9eef7;
+}
+
 .agent-log-item {
-  padding: var(--app-console-surface-pad-y) var(--app-console-surface-pad-x);
+  padding: 10px 12px;
+  border-color: rgba(81, 96, 122, 0.28);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .agent-node-list {
@@ -4152,6 +4425,7 @@ onBeforeUnmount(() => {
   .agent-node-card__actions,
   .agent-command-card__actions,
   .agent-action-grid,
+  .agent-log-toolbar,
   .agent-log-item__meta,
   .agent-selected-node-banner {
     flex-direction: column;

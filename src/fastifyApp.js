@@ -3176,6 +3176,15 @@ async function createFastifyApp() {
     }
   });
 
+  app.get("/console/api/agent/commands/:id", { preHandler: [requirePermission("console.agents.logs.detail"), queryRateLimit] }, async (request, reply) => {
+    const command = await getNodeCommandById(request.params.id);
+    if (!command) {
+      return sendNotFoundError(reply, "命令不存在");
+    }
+
+    return reply.send({ success: true, command });
+  });
+
   app.get("/console/api/agent/commands/:id/logs", { preHandler: [requirePermission("console.agents.logs.detail"), queryRateLimit] }, async (request, reply) => {
     try {
       const payload = nodeCommandLogQuerySchema.parse(request.query || {});
