@@ -925,6 +925,7 @@ watch(
 .permission-section-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 16px;
+  align-items: start;
 }
 
 .permission-section-card {
@@ -933,6 +934,7 @@ watch(
   border: 1px solid var(--app-border-soft);
   border-radius: var(--app-radius-md);
   background: rgba(255, 255, 255, 0.014);
+  align-self: start;
 }
 
 .permission-section-card__head,
@@ -954,11 +956,13 @@ watch(
 .permission-directory-grid {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
+  align-items: start;
 }
 
 .permission-directory-card {
   gap: 10px;
   padding: 0;
+  align-self: start;
 }
 
 .permission-directory-card__title {

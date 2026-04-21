@@ -611,8 +611,9 @@ const kepcsColumns = computed<DataTableColumns<KepcsCatalogServerItem>>(() => [
     key: 'actions',
     width: 134,
     fixed: 'right',
+    align: 'center',
     render: (row) =>
-      h(NSpace, { size: 'small', wrap: false, justify: 'end', class: 'catalog-action-group' }, {
+      h(NSpace, { size: 'small', wrap: false, justify: 'center', class: 'catalog-action-group' }, {
         default: () => [
           h(
             NButton,
@@ -650,10 +651,11 @@ const communityColumns = computed<DataTableColumns<CommunityCatalogServerItem>>(
   {
     title: '操作',
     key: 'actions',
-    width: 134,
+    width: 144,
     fixed: 'right',
+    align: 'center',
     render: (row) =>
-      h(NSpace, { size: 'small', wrap: false, justify: 'end', class: 'catalog-action-group' }, {
+      h(NSpace, { size: 'small', wrap: false, justify: 'center', class: 'catalog-action-group' }, {
         default: () => [
           h(
             NButton,
@@ -878,7 +880,7 @@ watch(
                   :columns="activeTab === 'kepcs' ? kepcsColumns : communityColumns"
                   :data="currentRows"
                   :bordered="false"
-                  :scroll-x="activeTab === 'kepcs' ? 980 : 744"
+                  :scroll-x="activeTab === 'kepcs' ? 980 : 754"
                 />
               </div>
             </div>

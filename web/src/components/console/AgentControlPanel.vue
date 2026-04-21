@@ -2910,294 +2910,296 @@ onBeforeUnmount(() => {
             <div class="agent-command-sections">
               <ConsoleSegmentedTabs v-model="commandSubTab" :options="commandSubTabOptions" />
 
-              <template v-if="commandSubTab === 'actions'">
-                <section class="agent-command-section agent-command-section--flat">
-                  <div class="agent-action-section__header">
-                    <strong>维护命令</strong>
-                    <span>节点级维护动作会直接对当前节点执行，不再混入 RCON 操作</span>
-                  </div>
-                  <NForm label-placement="top" class="console-field-grid cols-2 agent-toolbar-grid">
-                    <NFormItem label="节点">
-                      <NSelect v-model:value="selectedControlNodeId" :options="controlNodeOptions" />
-                    </NFormItem>
-                    <NFormItem label="快速刷新">
-                      <div class="console-inline-actions">
-                    <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">
-                      <ConsoleRefreshIcon />
-                    </NButton>
-                      </div>
-                    </NFormItem>
-                    <NFormItem label="崩溃检查成功后启动" class="col-span-full">
-                      <NSelect
-                        v-model:value="maintenanceCommandForm.startServerKeys"
-                        multiple
-                        clearable
-                        filterable
-                        max-tag-count="responsive"
-                        :options="maintenanceStartServerOptions"
-                        placeholder="不选则按 Agent 配置自动选择启动目标"
-                      />
-                    </NFormItem>
-                  </NForm>
-                  <div class="agent-command-card__summary">
-                    检查更新 / 崩溃检查 / 崩溃检查后启动都会直接使用 Agent 默认监控服。
-                  </div>
-                  <div class="agent-command-card__summary">
-                    需要“崩溃检查成功后启动”时，可以在这里多选要启动的服务器；不选则按 Agent YAML 里的自动启动配置执行。
-                  </div>
-                </section>
-
-                <div class="agent-control-grid">
-                  <section class="agent-command-section">
+              <Transition name="console-panel-switch" mode="out-in">
+                <div v-if="commandSubTab === 'actions'" key="command-actions" class="agent-panel-stack">
+                  <section class="agent-command-section agent-command-section--flat">
                     <div class="agent-action-section__header">
-                      <strong>基础与维护</strong>
-                      <span>把旧脚本里的维护动作收成节点级命令</span>
+                      <strong>维护命令</strong>
+                      <span>节点级维护动作会直接对当前节点执行，不再混入 RCON 操作</span>
                     </div>
-                    <div class="agent-action-grid">
-                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
-                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
-                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueMaintenanceCommand('node.check_update')">检查更新</NButton>
-                      <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
-                      <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
-                    </div>
-                    <div class="agent-command-card__summary">
-                      验证游戏完整性会先尝试读取当前 buildid；如果本地没有 manifest，会先打印“没有 manifest”再继续。随后会强制删除 Agent YAML 里配置的全部容器，清掉 steamapps 里的 appmanifest、downloading、temp，执行 steamcmd app_update validate，并补回 gameinfo.gi 里的 Metamod 路径。
-                    </div>
-                    <div class="agent-command-card__summary">
-                      强制清理容器只会对 Agent YAML 里配置的容器执行整批强制删除；不会读取版本，不会执行 validate，也不会删除游戏目录和挂载数据。
-                    </div>
-                  </section>
-
-                  <section class="agent-command-section">
-                    <div class="agent-action-section__header">
-                      <strong>版本与监控</strong>
-                      <span>读取版本号, 或单独执行崩溃检查与启动流程</span>
-                    </div>
-                    <div class="agent-action-grid">
-                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
-                      <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
-                      <NButton secondary class="console-button-tone--warning" @click="queueMaintenanceCommand('node.monitor_check')">崩溃检查</NButton>
-                      <NButton secondary class="console-button-tone--success" @click="queueMaintenanceCommand('node.monitor_start')">崩溃检查后启动</NButton>
-                    </div>
-                    <div class="agent-command-card__summary">
-                      读取当前版本 / 读取最新版本都不会停服；读取最新版本只会读取远端 buildid。
-                    </div>
-                    <div class="agent-command-card__summary">
-                      检查更新会先尝试读取本地 buildid；如果本地没有 manifest，会先打印“没有 manifest”并直接进入“删容器 -> 清理 steamapps -> steamcmd validate -> 崩溃检查”的完整流程。只有本地 manifest 存在时，才会继续读取远端 buildid 并按版本差异决定是否停服。
-                    </div>
-                    <div class="agent-command-card__summary">
-                      崩溃检查会先强制删除默认监控服容器，再重新创建并启动它；随后持续轮询容器状态和 RestartCount，在稳定运行达到阈值前只要频繁重启或长时间没恢复，就会判定失败并清掉监控容器。
-                    </div>
-                    <div class="agent-command-card__summary">
-                      崩溃检查后启动会先完整执行一遍崩溃检查；只有监控服稳定通过后，才启动你这里勾选的服务器。不勾选时会按 Agent YAML 里 start_after_monitor 的配置自动启动；如果都没配，就默认启动除监控服外的其它服。
-                    </div>
-                  </section>
-                </div>
-              </template>
-
-              <template v-else-if="commandSubTab === 'rcon'">
-                <section class="agent-command-section agent-command-section--flat">
-                  <div class="agent-action-section__header">
-                    <strong>RCON 操作</strong>
-                    <span>支持按分组或按服务器下发，密码从官网服务器目录读取并透传给 Agent</span>
-                  </div>
-                  <NForm label-placement="top" class="console-field-grid cols-3">
-                    <NFormItem label="节点">
-                      <NSelect v-model:value="selectedControlNodeId" :options="controlNodeOptions" />
-                    </NFormItem>
-                    <NFormItem label="目标类型">
-                      <NSelect
-                        v-model:value="nodeCommandForm.rconTargetMode"
-                        :options="[
-                          { label: '按分组', value: 'group' },
-                          { label: '按服务器', value: 'servers' },
-                        ]"
-                      />
-                    </NFormItem>
-                    <NFormItem label="快速刷新">
-                      <div class="console-inline-actions">
-                    <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">
-                      <ConsoleRefreshIcon />
-                    </NButton>
-                      </div>
-                    </NFormItem>
-                    <NFormItem v-if="nodeCommandForm.rconTargetMode === 'group'" label="目标分组">
-                      <NSelect v-model:value="nodeCommandForm.rconGroup" :options="nodeInstructionGroupOptions" />
-                    </NFormItem>
-                    <NFormItem v-else label="目标服务器" class="col-span-full">
-                      <NSelect
-                        v-model:value="nodeCommandForm.rconServerKeys"
-                        multiple
-                        clearable
-                        filterable
-                        max-tag-count="responsive"
-                        :options="rconServerOptions"
-                        placeholder="选择一台或多台服务器"
-                      />
-                    </NFormItem>
-                    <NFormItem
-                      label="RCON 指令"
-                      :class="{ 'col-span-full': nodeCommandForm.rconTargetMode === 'servers' }"
-                    >
-                      <NInput
-                        v-model:value="nodeCommandForm.rconCommand"
-                        placeholder="status"
-                        @keydown.enter.prevent="queueManualRconCommand()"
-                      />
-                    </NFormItem>
-                  </NForm>
-                  <div class="agent-action-grid">
-                    <NButton type="primary" @click="queueManualRconCommand()">
-                      发送 RCON
-                    </NButton>
-                  </div>
-                </section>
-              </template>
-
-              <template v-else>
-                <section class="agent-command-section agent-command-section--flat">
-                  <div class="agent-action-section__header">
-                    <strong>进行中命令</strong>
-                    <span>支持批量勾选、批量终止和批量强制终止当前任务</span>
-                  </div>
-                  <NForm label-placement="top" class="console-field-grid cols-3 agent-toolbar-grid">
-                    <NFormItem label="节点筛选">
-                      <NSelect v-model:value="selectedCommandNodeId" :options="commandNodeOptions" />
-                    </NFormItem>
-                    <NFormItem label="统计">
-                      <div class="agent-command-card__summary">
-                        当前筛选下共 {{ visibleActiveCommands.length }} 条待领取 / 已领取 / 运行中的命令
-                      </div>
-                    </NFormItem>
-                    <NFormItem label="刷新">
-                      <div class="console-inline-actions">
-                    <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新进行中命令" @click="loadActiveCommands()">
-                      <ConsoleRefreshIcon />
-                    </NButton>
-                      </div>
-                    </NFormItem>
-                  </NForm>
-                  <div class="agent-command-card__actions">
-                    <NButton secondary class="console-button-tone--neutral-strong" :disabled="!visibleActiveCommands.length" @click="selectAllVisibleActiveCommands()">
-                      全选当前筛选
-                    </NButton>
-                    <NButton secondary class="console-button-tone--neutral-strong" :disabled="!selectedActiveCommandIds.length" @click="clearSelectedActiveCommands()">
-                      清空选择
-                    </NButton>
-                    <NButton
-                      secondary
-                      class="console-button-tone--warning"
-                      :disabled="!selectedVisibleActiveCommands.length"
-                      @click="requestBatchCommandCancellation(false)"
-                    >
-                      批量终止 {{ selectedVisibleActiveCommands.length ? `(${selectedVisibleActiveCommands.length})` : '' }}
-                    </NButton>
-                    <NButton
-                      secondary
-                      class="console-button-tone--danger"
-                      :disabled="!selectedVisibleActiveCommands.length"
-                      @click="requestBatchCommandCancellation(true)"
-                    >
-                      批量强制终止 {{ selectedVisibleActiveCommands.length ? `(${selectedVisibleActiveCommands.length})` : '' }}
-                    </NButton>
-                  </div>
-                </section>
-
-                <div v-if="loadingActiveCommands && !visibleActiveCommands.length" class="hero-note min-h-[220px]">
-                  <NSpin size="large" />
-                </div>
-
-                <div v-else-if="visibleActiveCommands.length" class="agent-command-list">
-                  <article v-for="command in visibleActiveCommands" :key="command.id" class="fold-card agent-command-card">
-                    <button
-                      type="button"
-                      class="fold-card__trigger agent-command-card__trigger"
-                      @click="toggleCommandExpanded(command.id)"
-                    >
-                      <div class="fold-card__title agent-command-card__title">
-                        <strong>{{ commandActionText(command.commandType) }}</strong>
-                        <span>{{ command.node?.name || command.nodeId }} · {{ commandTargetText(command) }}</span>
-                        <span class="agent-command-card__preview">{{ commandSummaryText(command) }}</span>
-                      </div>
-                      <div class="fold-card__meta agent-command-card__meta-head">
-                        <NCheckbox
-                          :checked="isActiveCommandSelected(command.id)"
-                          @mousedown.stop
-                          @click.stop
-                          @update:checked="(checked) => toggleActiveCommandSelection(command.id, checked)"
+                    <NForm label-placement="top" class="console-field-grid cols-2 agent-toolbar-grid">
+                      <NFormItem label="节点">
+                        <NSelect v-model:value="selectedControlNodeId" :options="controlNodeOptions" />
+                      </NFormItem>
+                      <NFormItem label="快速刷新">
+                        <div class="console-inline-actions">
+                          <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">
+                            <ConsoleRefreshIcon />
+                          </NButton>
+                        </div>
+                      </NFormItem>
+                      <NFormItem label="崩溃检查成功后启动" class="col-span-full">
+                        <NSelect
+                          v-model:value="maintenanceCommandForm.startServerKeys"
+                          multiple
+                          clearable
+                          filterable
+                          max-tag-count="responsive"
+                          :options="maintenanceStartServerOptions"
+                          placeholder="不选则按 Agent 配置自动选择启动目标"
                         />
-                        <NTag round :type="commandStatusType(command.status)">
-                          {{ command.status }}
-                        </NTag>
-                        <NTag
-                          v-if="commandControlState(command).requestedAt"
-                          round
-                          :type="commandControlState(command).force ? 'error' : 'warning'"
-                        >
-                          {{ commandControlState(command).force ? '已请求强停' : '已请求终止' }}
-                        </NTag>
-                        <span class="fold-card__arrow" :class="{ 'is-open': isCommandExpanded(command.id) }">⌄</span>
-                      </div>
-                    </button>
-
-                    <div v-if="isCommandExpanded(command.id)" class="fold-card__body agent-command-card__body cdk-expand-panel">
-                      <div class="agent-command-card__summary">
-                        {{ commandSummaryText(command) }}
-                      </div>
-
-                      <div class="agent-command-card__meta">
-                        <div>
-                          <span>创建时间</span>
-                          <strong>{{ formatDateTime(command.createdAt) }}</strong>
-                        </div>
-                        <div>
-                          <span>开始时间</span>
-                          <strong>{{ formatDateTime(command.startedAt) }}</strong>
-                        </div>
-                        <div>
-                          <span>下发人</span>
-                          <strong>{{ command.createdBySteamId }}</strong>
-                        </div>
-                        <div>
-                          <span>当前参数</span>
-                          <strong>{{ previewValue(command.payload, '-') }}</strong>
-                        </div>
-                      </div>
-
-                      <div class="agent-command-card__actions">
-                        <NButton secondary @click="openCommandDetails(command)">查看详情</NButton>
-                        <NButton v-if="props.canViewLogDetails" secondary @click="openLogModal(command)">查看日志</NButton>
-                        <NButton secondary @click="copyText(JSON.stringify(command.payload || {}, null, 2), '命令参数')">
-                          复制参数
-                        </NButton>
-                        <NButton
-                          secondary
-                          class="console-button-tone--warning"
-                          :disabled="!canGracefullyCancelCommand(command)"
-                          @click="requestCommandCancellation(command, false)"
-                        >
-                          终止
-                        </NButton>
-                        <NButton
-                          secondary
-                          class="console-button-tone--danger"
-                          :disabled="!canForceCancelCommand(command)"
-                          @click="requestCommandCancellation(command, true)"
-                        >
-                          强制终止
-                        </NButton>
-                      </div>
+                      </NFormItem>
+                    </NForm>
+                    <div class="agent-command-card__summary">
+                      检查更新 / 崩溃检查 / 崩溃检查后启动都会直接使用 Agent 默认监控服。
                     </div>
-                  </article>
-                </div>
+                    <div class="agent-command-card__summary">
+                      需要“崩溃检查成功后启动”时，可以在这里多选要启动的服务器；不选则按 Agent YAML 里的自动启动配置执行。
+                    </div>
+                  </section>
 
-                <div v-else class="hero-note min-h-[220px]">
-                  <div class="hero-note__inner">
-                    <div class="hero-note__title">暂无进行中命令</div>
-                    <div class="hero-note__desc">新下发的批量操作、维护命令或定时命令都会显示在这里</div>
+                  <div class="agent-control-grid">
+                    <section class="agent-command-section">
+                      <div class="agent-action-section__header">
+                        <strong>基础与维护</strong>
+                        <span>把旧脚本里的维护动作收成节点级命令</span>
+                      </div>
+                      <div class="agent-action-grid">
+                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
+                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
+                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueMaintenanceCommand('node.check_update')">检查更新</NButton>
+                        <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
+                        <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
+                      </div>
+                      <div class="agent-command-card__summary">
+                        验证游戏完整性会先尝试读取当前 buildid；如果本地没有 manifest，会先打印“没有 manifest”再继续。随后会强制删除 Agent YAML 里配置的全部容器，清掉 steamapps 里的 appmanifest、downloading、temp，执行 steamcmd app_update validate，并补回 gameinfo.gi 里的 Metamod 路径。
+                      </div>
+                      <div class="agent-command-card__summary">
+                        强制清理容器只会对 Agent YAML 里配置的容器执行整批强制删除；不会读取版本，不会执行 validate，也不会删除游戏目录和挂载数据。
+                      </div>
+                    </section>
+
+                    <section class="agent-command-section">
+                      <div class="agent-action-section__header">
+                        <strong>版本与监控</strong>
+                        <span>读取版本号, 或单独执行崩溃检查与启动流程</span>
+                      </div>
+                      <div class="agent-action-grid">
+                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
+                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
+                        <NButton secondary class="console-button-tone--warning" @click="queueMaintenanceCommand('node.monitor_check')">崩溃检查</NButton>
+                        <NButton secondary class="console-button-tone--success" @click="queueMaintenanceCommand('node.monitor_start')">崩溃检查后启动</NButton>
+                      </div>
+                      <div class="agent-command-card__summary">
+                        读取当前版本 / 读取最新版本都不会停服；读取最新版本只会读取远端 buildid。
+                      </div>
+                      <div class="agent-command-card__summary">
+                        检查更新会先尝试读取本地 buildid；如果本地没有 manifest，会先打印“没有 manifest”并直接进入“删容器 -> 清理 steamapps -> steamcmd validate -> 崩溃检查”的完整流程。只有本地 manifest 存在时，才会继续读取远端 buildid 并按版本差异决定是否停服。
+                      </div>
+                      <div class="agent-command-card__summary">
+                        崩溃检查会先强制删除默认监控服容器，再重新创建并启动它；随后持续轮询容器状态和 RestartCount，在稳定运行达到阈值前只要频繁重启或长时间没恢复，就会判定失败并清掉监控容器。
+                      </div>
+                      <div class="agent-command-card__summary">
+                        崩溃检查后启动会先完整执行一遍崩溃检查；只有监控服稳定通过后，才启动你这里勾选的服务器。不勾选时会按 Agent YAML 里 start_after_monitor 的配置自动启动；如果都没配，就默认启动除监控服外的其它服。
+                      </div>
+                    </section>
                   </div>
                 </div>
-              </template>
+
+                <div v-else-if="commandSubTab === 'rcon'" key="command-rcon" class="agent-panel-stack">
+                  <section class="agent-command-section agent-command-section--flat">
+                    <div class="agent-action-section__header">
+                      <strong>RCON 操作</strong>
+                      <span>支持按分组或按服务器下发，密码从官网服务器目录读取并透传给 Agent</span>
+                    </div>
+                    <NForm label-placement="top" class="console-field-grid cols-3">
+                      <NFormItem label="节点">
+                        <NSelect v-model:value="selectedControlNodeId" :options="controlNodeOptions" />
+                      </NFormItem>
+                      <NFormItem label="目标类型">
+                        <NSelect
+                          v-model:value="nodeCommandForm.rconTargetMode"
+                          :options="[
+                            { label: '按分组', value: 'group' },
+                            { label: '按服务器', value: 'servers' },
+                          ]"
+                        />
+                      </NFormItem>
+                      <NFormItem label="快速刷新">
+                        <div class="console-inline-actions">
+                          <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">
+                            <ConsoleRefreshIcon />
+                          </NButton>
+                        </div>
+                      </NFormItem>
+                      <NFormItem v-if="nodeCommandForm.rconTargetMode === 'group'" label="目标分组">
+                        <NSelect v-model:value="nodeCommandForm.rconGroup" :options="nodeInstructionGroupOptions" />
+                      </NFormItem>
+                      <NFormItem v-else label="目标服务器" class="col-span-full">
+                        <NSelect
+                          v-model:value="nodeCommandForm.rconServerKeys"
+                          multiple
+                          clearable
+                          filterable
+                          max-tag-count="responsive"
+                          :options="rconServerOptions"
+                          placeholder="选择一台或多台服务器"
+                        />
+                      </NFormItem>
+                      <NFormItem
+                        label="RCON 指令"
+                        :class="{ 'col-span-full': nodeCommandForm.rconTargetMode === 'servers' }"
+                      >
+                        <NInput
+                          v-model:value="nodeCommandForm.rconCommand"
+                          placeholder="status"
+                          @keydown.enter.prevent="queueManualRconCommand()"
+                        />
+                      </NFormItem>
+                    </NForm>
+                    <div class="agent-action-grid">
+                      <NButton type="primary" @click="queueManualRconCommand()">
+                        发送 RCON
+                      </NButton>
+                    </div>
+                  </section>
+                </div>
+
+                <div v-else key="command-running" class="agent-panel-stack">
+                  <section class="agent-command-section agent-command-section--flat">
+                    <div class="agent-action-section__header">
+                      <strong>进行中命令</strong>
+                      <span>支持批量勾选、批量终止和批量强制终止当前任务</span>
+                    </div>
+                    <NForm label-placement="top" class="console-field-grid cols-3 agent-toolbar-grid">
+                      <NFormItem label="节点筛选">
+                        <NSelect v-model:value="selectedCommandNodeId" :options="commandNodeOptions" />
+                      </NFormItem>
+                      <NFormItem label="统计">
+                        <div class="agent-command-card__summary">
+                          当前筛选下共 {{ visibleActiveCommands.length }} 条待领取 / 已领取 / 运行中的命令
+                        </div>
+                      </NFormItem>
+                      <NFormItem label="刷新">
+                        <div class="console-inline-actions">
+                          <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新进行中命令" @click="loadActiveCommands()">
+                            <ConsoleRefreshIcon />
+                          </NButton>
+                        </div>
+                      </NFormItem>
+                    </NForm>
+                    <div class="agent-command-card__actions">
+                      <NButton secondary class="console-button-tone--neutral-strong" :disabled="!visibleActiveCommands.length" @click="selectAllVisibleActiveCommands()">
+                        全选当前筛选
+                      </NButton>
+                      <NButton secondary class="console-button-tone--neutral-strong" :disabled="!selectedActiveCommandIds.length" @click="clearSelectedActiveCommands()">
+                        清空选择
+                      </NButton>
+                      <NButton
+                        secondary
+                        class="console-button-tone--warning"
+                        :disabled="!selectedVisibleActiveCommands.length"
+                        @click="requestBatchCommandCancellation(false)"
+                      >
+                        批量终止 {{ selectedVisibleActiveCommands.length ? `(${selectedVisibleActiveCommands.length})` : '' }}
+                      </NButton>
+                      <NButton
+                        secondary
+                        class="console-button-tone--danger"
+                        :disabled="!selectedVisibleActiveCommands.length"
+                        @click="requestBatchCommandCancellation(true)"
+                      >
+                        批量强制终止 {{ selectedVisibleActiveCommands.length ? `(${selectedVisibleActiveCommands.length})` : '' }}
+                      </NButton>
+                    </div>
+                  </section>
+
+                  <div v-if="loadingActiveCommands && !visibleActiveCommands.length" class="hero-note min-h-[220px]">
+                    <NSpin size="large" />
+                  </div>
+
+                  <div v-else-if="visibleActiveCommands.length" class="agent-command-list">
+                    <article v-for="command in visibleActiveCommands" :key="command.id" class="fold-card agent-command-card">
+                      <button
+                        type="button"
+                        class="fold-card__trigger agent-command-card__trigger"
+                        @click="toggleCommandExpanded(command.id)"
+                      >
+                        <div class="fold-card__title agent-command-card__title">
+                          <strong>{{ commandActionText(command.commandType) }}</strong>
+                          <span>{{ command.node?.name || command.nodeId }} · {{ commandTargetText(command) }}</span>
+                          <span class="agent-command-card__preview">{{ commandSummaryText(command) }}</span>
+                        </div>
+                        <div class="fold-card__meta agent-command-card__meta-head">
+                          <NCheckbox
+                            :checked="isActiveCommandSelected(command.id)"
+                            @mousedown.stop
+                            @click.stop
+                            @update:checked="(checked) => toggleActiveCommandSelection(command.id, checked)"
+                          />
+                          <NTag round :type="commandStatusType(command.status)">
+                            {{ command.status }}
+                          </NTag>
+                          <NTag
+                            v-if="commandControlState(command).requestedAt"
+                            round
+                            :type="commandControlState(command).force ? 'error' : 'warning'"
+                          >
+                            {{ commandControlState(command).force ? '已请求强停' : '已请求终止' }}
+                          </NTag>
+                          <span class="fold-card__arrow" :class="{ 'is-open': isCommandExpanded(command.id) }">⌄</span>
+                        </div>
+                      </button>
+
+                      <div v-if="isCommandExpanded(command.id)" class="fold-card__body agent-command-card__body cdk-expand-panel">
+                        <div class="agent-command-card__summary">
+                          {{ commandSummaryText(command) }}
+                        </div>
+
+                        <div class="agent-command-card__meta">
+                          <div>
+                            <span>创建时间</span>
+                            <strong>{{ formatDateTime(command.createdAt) }}</strong>
+                          </div>
+                          <div>
+                            <span>开始时间</span>
+                            <strong>{{ formatDateTime(command.startedAt) }}</strong>
+                          </div>
+                          <div>
+                            <span>下发人</span>
+                            <strong>{{ command.createdBySteamId }}</strong>
+                          </div>
+                          <div>
+                            <span>当前参数</span>
+                            <strong>{{ previewValue(command.payload, '-') }}</strong>
+                          </div>
+                        </div>
+
+                        <div class="agent-command-card__actions">
+                          <NButton secondary @click="openCommandDetails(command)">查看详情</NButton>
+                          <NButton v-if="props.canViewLogDetails" secondary @click="openLogModal(command)">查看日志</NButton>
+                          <NButton secondary @click="copyText(JSON.stringify(command.payload || {}, null, 2), '命令参数')">
+                            复制参数
+                          </NButton>
+                          <NButton
+                            secondary
+                            class="console-button-tone--warning"
+                            :disabled="!canGracefullyCancelCommand(command)"
+                            @click="requestCommandCancellation(command, false)"
+                          >
+                            终止
+                          </NButton>
+                          <NButton
+                            secondary
+                            class="console-button-tone--danger"
+                            :disabled="!canForceCancelCommand(command)"
+                            @click="requestCommandCancellation(command, true)"
+                          >
+                            强制终止
+                          </NButton>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+
+                  <div v-else class="hero-note min-h-[220px]">
+                    <div class="hero-note__inner">
+                      <div class="hero-note__title">暂无进行中命令</div>
+                      <div class="hero-note__desc">新下发的批量操作、维护命令或定时命令都会显示在这里</div>
+                    </div>
+                  </div>
+                </div>
+              </Transition>
             </div>
           </div>
 

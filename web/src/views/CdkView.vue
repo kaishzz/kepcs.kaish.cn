@@ -130,6 +130,7 @@ const myExpandedRowKeys = ref<DataTableRowKey[]>([])
 const manageExpandedRowKeys = ref<DataTableRowKey[]>([])
 const expandedAuditLogIds = ref<string[]>([])
 const expandedOrderLogIds = ref<string[]>([])
+const expandedMapChallengeRowKeys = ref<DataTableRowKey[]>([])
 const whitelistOptions = ref<Array<{ label: string, value: string }>>([])
 
 function createConsoleLoadState(): Record<ConsoleLoadKey, boolean> {
@@ -860,10 +861,18 @@ function cdkRowKey(row: CdkItem) {
   return row.id
 }
 
+function mapChallengeRowKey(row: MapChallengeRecordItem) {
+  return `${row.steamId}::${row.mapName}::${row.stage}::${row.mode}`
+}
+
+function toggleExpandedRowKey(keys: Ref<DataTableRowKey[]>, key: DataTableRowKey) {
+  keys.value = keys.value.includes(key)
+    ? keys.value.filter((item) => item !== key)
+    : [...keys.value, key]
+}
+
 function toggleExpandedRow(keys: typeof myExpandedRowKeys, id: string) {
-  keys.value = keys.value.includes(id)
-    ? keys.value.filter((item) => item !== id)
-    : [...keys.value, id]
+  toggleExpandedRowKey(keys, id)
 }
 
 function toggleMyExpandedRow(id: string) {
@@ -880,6 +889,20 @@ function isMyExpandedRow(id: string) {
 
 function isManageExpandedRow(id: string) {
   return manageExpandedRowKeys.value.includes(id)
+}
+
+function renderMapChallengeExpand(row: MapChallengeRecordItem) {
+  return h('div', { class: 'cdk-expand-panel' }, [
+    renderDetailGrid(buildMapChallengeEntries(row)),
+  ])
+}
+
+function isMapChallengeExpanded(row: MapChallengeRecordItem) {
+  return expandedMapChallengeRowKeys.value.includes(mapChallengeRowKey(row))
+}
+
+function toggleMapChallengeExpanded(row: MapChallengeRecordItem) {
+  toggleExpandedRowKey(expandedMapChallengeRowKeys, mapChallengeRowKey(row))
 }
 
 function isCheckedRow(id: string) {
@@ -1005,9 +1028,11 @@ function buildProductEntries(row: CdkProductItem) {
 
 function buildMapChallengeEntries(row: MapChallengeRecordItem) {
   return [
+    { label: '玩家', value: row.name || '-' },
     { label: 'UID', value: row.userId == null ? '-' : String(row.userId) },
     { label: 'SteamID64', value: row.steamId },
-    { label: '地图 · 阶段', value: buildMapChallengeTarget(row.mapName, row.stage) },
+    { label: '地图', value: row.mapName || '-' },
+    { label: '阶段', value: row.stage || '-' },
     { label: '模式', value: mapChallengeModeLabel(row.mode) },
     { label: '存活时间', value: formatMapChallengeDuration(row.duration, row.mode) },
     { label: '更新时间', value: formatDate(row.updatedAt) },
@@ -1028,21 +1053,22 @@ function shouldIgnoreRowClick(event: MouseEvent) {
   )
 }
 
-function buildExpandRowProps(keys: typeof myExpandedRowKeys) {
-  return (row: CdkItem) => ({
+function buildExpandRowProps<T>(keys: Ref<DataTableRowKey[]>, resolveKey: (row: T) => DataTableRowKey) {
+  return (row: T) => ({
     class: 'cdk-row',
     onClick: (event: MouseEvent) => {
       if (shouldIgnoreRowClick(event)) {
         return
       }
 
-      toggleExpandedRow(keys, row.id)
+      toggleExpandedRowKey(keys, resolveKey(row))
     },
   })
 }
 
-const myTableRowProps = buildExpandRowProps(myExpandedRowKeys)
-const manageTableRowProps = buildExpandRowProps(manageExpandedRowKeys)
+const myTableRowProps = buildExpandRowProps(myExpandedRowKeys, cdkRowKey)
+const manageTableRowProps = buildExpandRowProps(manageExpandedRowKeys, cdkRowKey)
+const mapChallengeTableRowProps = buildExpandRowProps(expandedMapChallengeRowKeys, mapChallengeRowKey)
 
 async function copyText(value: string | null | undefined, label: string) {
   const text = String(value || '').trim()
@@ -2091,19 +2117,19 @@ async function saveProductEditor() {
 const myColumns = computed<DataTableColumns<CdkItem>>(() => {
   const columns: DataTableColumns<CdkItem> = [
     { type: 'expand', renderExpand: renderCdkExpand },
-    { title: 'CDK', key: 'code', ellipsis: { tooltip: true } },
+    { title: 'CDK', key: 'code', minWidth: 280, ellipsis: { tooltip: true } },
     {
       title: '状态',
       key: 'statusLabel',
+      width: 104,
       render: (row) => h(NTag, { round: false, type: cdkStatusType(row) }, { default: () => cdkStatusText(row) }),
     },
   ]
 
   if (!isMobileView.value) {
     columns.push(
-      { title: '备注', key: 'note', ellipsis: { tooltip: true }, render: (row) => row.note || '-' },
-      { title: '过期时间', key: 'expiresAt', render: (row) => formatDate(row.expiresAt) },
-      { title: '最近变动', key: 'updatedAt', render: (row) => formatDate(row.updatedAt) },
+      { title: '备注', key: 'note', minWidth: 220, ellipsis: { tooltip: true }, render: (row) => row.note || '-' },
+      { title: '最近变动', key: 'updatedAt', width: 176, render: (row) => formatDate(row.updatedAt) },
     )
   }
 
@@ -2111,6 +2137,7 @@ const myColumns = computed<DataTableColumns<CdkItem>>(() => {
     title: '操作',
     key: 'actions',
     width: isMobileView.value ? 96 : 124,
+    align: 'center',
     render: (row) =>
       row.isValid
         ? h(
@@ -2128,24 +2155,23 @@ const manageColumns = computed<DataTableColumns<CdkItem>>(() => {
   const columns: DataTableColumns<CdkItem> = [
     { type: 'selection' },
     { type: 'expand', renderExpand: renderCdkExpand },
-    { title: 'CDK', key: 'code', ellipsis: { tooltip: true } },
+    { title: 'CDK', key: 'code', minWidth: 260, ellipsis: { tooltip: true } },
   ]
 
   if (!isMobileView.value) {
-    columns.push({ title: '持有人', key: 'ownerSteamId', ellipsis: { tooltip: true } })
+    columns.push({ title: '持有人', key: 'ownerSteamId', width: 188, ellipsis: { tooltip: true } })
   }
 
   columns.push({
     title: '状态',
     key: 'status',
+    width: 104,
     render: (row) => h(NTag, { round: false, type: cdkStatusType(row) }, { default: () => cdkStatusText(row) }),
   })
 
   if (!isMobileView.value) {
     columns.push(
-      { title: '备注', key: 'note', ellipsis: { tooltip: true }, render: (row) => row.note || '-' },
-      { title: '过期时间', key: 'expiresAt', render: (row) => formatDate(row.expiresAt) },
-      { title: '最近变动', key: 'updatedAt', render: (row) => formatDate(row.updatedAt) },
+      { title: '最近变动', key: 'updatedAt', width: 176, render: (row) => formatDate(row.updatedAt) },
     )
   }
 
@@ -2153,6 +2179,7 @@ const manageColumns = computed<DataTableColumns<CdkItem>>(() => {
     title: '操作',
     key: 'actions',
     width: isMobileView.value ? 136 : 190,
+    align: 'center',
     render: (row) =>
       h(NSpace, { size: 8, wrap: true }, () => [
         h(
@@ -2192,15 +2219,15 @@ const logColumns = computed<DataTableColumns<AuditLogItem>>(() => {
   return [
     { type: 'expand', renderExpand: renderAuditLogExpand },
     { title: '时间', key: 'createdAt', width: 176, render: (row) => formatDate(row.createdAt) },
-    { title: '操作者', key: 'actorSteamId', minWidth: 180, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.actorSteamId, '操作者 SteamID64') },
+    { title: '操作者', key: 'actorSteamId', width: 182, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.actorSteamId, '操作者 SteamID64') },
     {
       title: '身份',
       key: 'actorRole',
-      width: 124,
+      width: 108,
       render: (row) => h(NTag, { round: false, type: roleTagType(row.actorRole) }, { default: () => auditActorRoleText(row.actorRole) }),
     },
-    { title: '动作', key: 'action', minWidth: 220, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.action, '动作') },
-    { title: '目标类型', key: 'targetType', minWidth: 160, ellipsis: { tooltip: true } },
+    { title: '动作', key: 'action', width: 170, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.action, '动作') },
+    { title: '目标类型', key: 'targetType', width: 152, ellipsis: { tooltip: true } },
   ]
 })
 
@@ -2284,9 +2311,11 @@ const productColumns = computed<DataTableColumns<CdkProductItem>>(() => {
 
 const mapChallengeColumns = computed<DataTableColumns<MapChallengeRecordItem>>(() => {
   const columns: DataTableColumns<MapChallengeRecordItem> = [
+    { type: 'expand', renderExpand: renderMapChallengeExpand },
     {
       title: '玩家',
       key: 'name',
+      minWidth: 140,
       ellipsis: { tooltip: true },
       render: (row) => row.name,
     },
@@ -2299,28 +2328,28 @@ const mapChallengeColumns = computed<DataTableColumns<MapChallengeRecordItem>>((
     {
       title: 'SteamID64',
       key: 'steamId',
+      width: 176,
       ellipsis: { tooltip: true },
       render: (row) => renderCopyButton(row.steamId, 'SteamID64'),
     },
     {
-      title: '地图 · 阶段',
-      key: 'target',
+      title: '地图',
+      key: 'mapName',
+      minWidth: 180,
       ellipsis: { tooltip: true },
-      render: (row) => buildMapChallengeTarget(row.mapName, row.stage),
+      render: (row) => row.mapName || '-',
     },
     {
-      title: '模式',
-      key: 'mode',
-      render: (row) => mapChallengeModeLabel(row.mode),
-    },
-    {
-      title: '存活时间',
-      key: 'duration',
-      render: (row) => formatMapChallengeDuration(row.duration, row.mode),
+      title: '阶段',
+      key: 'stage',
+      width: 96,
+      ellipsis: { tooltip: true },
+      render: (row) => row.stage || '-',
     },
     {
       title: '更新时间',
       key: 'updatedAt',
+      width: 176,
       render: (row) => formatDate(row.updatedAt),
     },
   ]
@@ -2330,6 +2359,7 @@ const mapChallengeColumns = computed<DataTableColumns<MapChallengeRecordItem>>((
       title: '操作',
       key: 'actions',
       width: 120,
+      align: 'center',
       render: (row) =>
         h(
           NButton,
@@ -2404,6 +2434,16 @@ watch(
   () => orderLogPagination.pagedRows.value.map((row) => row.orderNo),
   (visibleIds) => {
     expandedOrderLogIds.value = expandedOrderLogIds.value.filter((id) => visibleIds.includes(id))
+  },
+  { immediate: true },
+)
+
+watch(
+  () => mapChallengePagination.pagedRows.value.map((row) => String(mapChallengeRowKey(row))),
+  (visibleIds) => {
+    expandedMapChallengeRowKeys.value = expandedMapChallengeRowKeys.value.filter((id) =>
+      visibleIds.includes(String(id)),
+    )
   },
   { immediate: true },
 )
@@ -2677,6 +2717,7 @@ onBeforeUnmount(() => {
                     :data="myCdkPagination.pagedRows.value"
                     :loading="myLoading"
                     :bordered="false"
+                    :scroll-x="920"
                     :row-key="cdkRowKey"
                     :row-props="myTableRowProps"
                   />
@@ -2922,6 +2963,7 @@ onBeforeUnmount(() => {
                           :data="managedCdkPagination.pagedRows.value"
                           :loading="manageLoading"
                           :bordered="false"
+                          :scroll-x="980"
                           :row-key="cdkRowKey"
                           :row-props="manageTableRowProps"
                         />
@@ -3035,12 +3077,13 @@ onBeforeUnmount(() => {
                         </NFormItem>
                       </NForm>
                     </ConsoleSectionBlock>
-                    <div v-if="!isMobileView" class="table-shell table-shell--stable table-shell--log-stable table-shell--page-12">
+                    <div v-if="!isMobileView" class="table-shell table-shell--stable table-shell--log-stable table-shell--page-12 table-shell--audit-log">
                       <NDataTable
                         :columns="logColumns"
                         :data="logPagination.pagedRows.value"
                         :loading="logLoading"
                         :bordered="false"
+                        :scroll-x="880"
                       />
                     </div>
                     <div v-else class="mobile-record-list">
@@ -3291,10 +3334,14 @@ onBeforeUnmount(() => {
 
                   <div v-if="!isMobileView" class="table-shell table-shell--short-stable">
                     <NDataTable
+                      v-model:expanded-row-keys="expandedMapChallengeRowKeys"
                       :columns="mapChallengeColumns"
                       :data="mapChallengePagination.pagedRows.value"
                       :loading="mapChallengeLoading"
                       :bordered="false"
+                      :scroll-x="1080"
+                      :row-key="mapChallengeRowKey"
+                      :row-props="mapChallengeTableRowProps"
                     />
                   </div>
                   <div v-else class="mobile-record-list">
@@ -3305,30 +3352,44 @@ onBeforeUnmount(() => {
                       <article
                         v-for="row in mapChallengePagination.pagedRows.value"
                         :key="`${row.steamId}-${row.mapName}-${row.stage}-${row.mode}`"
-                        class="mobile-info-card"
+                        class="fold-card mobile-info-card"
+                        :class="{ 'fold-card--expanded': isMapChallengeExpanded(row) }"
                       >
-                        <div class="mobile-info-card__top">
-                          <strong>{{ row.name }}</strong>
-                          <span>{{ buildMapChallengeTarget(row.mapName, row.stage) }}</span>
-                        </div>
-                        <div class="mobile-info-card__grid">
-                          <div
-                            v-for="entry in buildMapChallengeEntries(row)"
-                            :key="`${row.steamId}-${row.mapName}-${row.stage}-${entry.label}`"
-                            class="mobile-info-card__item"
-                          >
-                            <span>{{ entry.label }}</span>
-                            <template v-if="entry.label === 'SteamID64'">
-                              <button type="button" class="log-copy-button" @click="copyText(entry.value, entry.label)">
-                                {{ entry.value }}
-                              </button>
-                            </template>
-                            <strong v-else>{{ entry.value }}</strong>
+                        <button type="button" class="fold-card__trigger" @click="toggleMapChallengeExpanded(row)">
+                          <div class="fold-card__title">
+                            <strong>{{ row.name }}</strong>
+                            <span>UID {{ row.userId ?? '-' }}</span>
+                            <span>{{ row.steamId }}</span>
+                            <span>地图 {{ row.mapName || '-' }}</span>
+                            <span>阶段 {{ row.stage || '-' }}</span>
+                            <span>更新时间 {{ formatDate(row.updatedAt) }}</span>
                           </div>
-                        </div>
-                        <div v-if="canEditMapChallenges" class="mobile-record-card__actions">
-                          <NButton type="warning" block @click="fillMapChallengeForm(row)">载入编辑</NButton>
-                        </div>
+                          <div class="fold-card__meta">
+                            <span class="fold-card__arrow" :class="{ 'is-open': isMapChallengeExpanded(row) }">⌄</span>
+                          </div>
+                        </button>
+                        <NCollapseTransition :show="isMapChallengeExpanded(row)">
+                          <div class="fold-card__body">
+                            <div class="mobile-info-card__grid">
+                              <div
+                                v-for="entry in buildMapChallengeEntries(row)"
+                                :key="`${row.steamId}-${row.mapName}-${row.stage}-${entry.label}`"
+                                class="mobile-info-card__item"
+                              >
+                                <span>{{ entry.label }}</span>
+                                <template v-if="entry.label === 'SteamID64'">
+                                  <button type="button" class="log-copy-button" @click="copyText(entry.value, entry.label)">
+                                    {{ entry.value }}
+                                  </button>
+                                </template>
+                                <strong v-else>{{ entry.value }}</strong>
+                              </div>
+                            </div>
+                            <div v-if="canEditMapChallenges" class="mobile-record-card__actions">
+                              <NButton type="warning" block @click.stop="fillMapChallengeForm(row)">载入编辑</NButton>
+                            </div>
+                          </div>
+                        </NCollapseTransition>
                       </article>
                     </div>
                     <div v-else class="hero-note min-h-[200px]">

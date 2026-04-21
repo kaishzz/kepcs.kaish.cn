@@ -1660,6 +1660,20 @@ img {
   padding-right: 16px;
 }
 
+.table-shell--audit-log .n-data-table {
+  min-width: 880px;
+}
+
+.table-shell--audit-log .n-data-table-th,
+.table-shell--audit-log .n-data-table-td {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.table-shell--audit-log .n-data-table-expand-trigger {
+  margin-inline: auto;
+}
+
 .table-shell--page-12 {
   min-height: 560px;
 }
