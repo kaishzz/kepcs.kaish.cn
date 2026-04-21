@@ -242,6 +242,14 @@ const agentQueryRateLimit = createFastifyRateLimit({
   message: "服务器控制查询过于频繁，请稍后再试。",
 });
 
+const agentLogTailRateLimit = createFastifyRateLimit({
+  windowMs: 60 * 1000,
+  max: 180,
+  keyPrefix: "agent-log-tail",
+  keyGenerator: userScopedKey,
+  message: "命令日志刷新过于频繁，请稍后再试。",
+});
+
 const logQueryRateLimit = createFastifyRateLimit({
   windowMs: 60 * 1000,
   max: 25,
@@ -3185,11 +3193,20 @@ async function createFastifyApp() {
     return reply.send({ success: true, command });
   });
 
-  app.get("/console/api/agent/commands/:id/logs", { preHandler: [requirePermission("console.agents.logs.detail"), queryRateLimit] }, async (request, reply) => {
+  app.get("/console/api/agent/commands/:id/logs", { preHandler: [requirePermission("console.agents.logs.detail"), agentLogTailRateLimit] }, async (request, reply) => {
     try {
       const payload = nodeCommandLogQuerySchema.parse(request.query || {});
-      const logs = await listNodeCommandLogs(request.params.id, payload.limit);
-      return reply.send({ success: true, logs });
+      const [command, logs] = await Promise.all([
+        getNodeCommandById(request.params.id),
+        listNodeCommandLogs(request.params.id, payload.limit),
+      ]);
+
+      if (!command) {
+        return sendNotFoundError(reply, "命令不存在");
+      }
+
+      reply.header("Cache-Control", "no-store");
+      return reply.send({ success: true, command, logs });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return sendValidationError(reply, error, "日志查询参数错误");

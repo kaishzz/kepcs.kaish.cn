@@ -1992,6 +1992,17 @@ const logModalHint = computed(() =>
     : '命令已结束，可手动刷新查看完整执行输出。',
 )
 
+function formatLogTerminalLine(log: NodeCommandLogItem) {
+  const timestamp = dayjs(log.createdAt).format('MM-DD HH:mm:ss')
+  const level = String(log.level || '').trim().toLowerCase()
+  const levelSuffix = level && level !== 'info' ? ` ${level}` : ''
+  return `${timestamp}${levelSuffix} | ${log.message}`
+}
+
+const logTerminalText = computed(() =>
+  commandLogs.value.map((log) => formatLogTerminalLine(log)).join('\n'),
+)
+
 function stopLogPolling() {
   if (!logPollTimer) {
     return
@@ -2013,7 +2024,7 @@ function syncLogPolling() {
 
   logPollTimer = setInterval(() => {
     void refreshLogModal(true)
-  }, 1500)
+  }, 2000)
 }
 
 function isLogViewerNearBottom() {
@@ -2053,15 +2064,16 @@ async function refreshLogModal(silent = false) {
   const shouldStickToBottom = isLogViewerNearBottom()
 
   try {
-    const [{ data: commandData }, { data: logsData }] = await Promise.all([
-      http.get(`${CONSOLE_API_BASE}/agent/commands/${encodeURIComponent(currentCommand.id)}`),
-      http.get(`${CONSOLE_API_BASE}/agent/commands/${encodeURIComponent(currentCommand.id)}/logs`, {
-        params: { limit: 1000 },
-      }),
-    ])
+    const { data } = await http.get(`${CONSOLE_API_BASE}/agent/commands/${encodeURIComponent(currentCommand.id)}/logs`, {
+      params: { limit: 1000 },
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    })
 
-    const nextCommand = (commandData.command || currentCommand) as NodeCommandItem
-    const nextLogs = Array.isArray(logsData.logs) ? logsData.logs as NodeCommandLogItem[] : []
+    const nextCommand = (data.command || currentCommand) as NodeCommandItem
+    const nextLogs = Array.isArray(data.logs) ? data.logs as NodeCommandLogItem[] : []
 
     logModal.value = {
       show: true,
@@ -2080,8 +2092,8 @@ async function refreshLogModal(silent = false) {
     if (!silent) {
       pushToast((error as Error).message, 'error')
       logModal.value.show = false
+      stopLogPolling()
     }
-    stopLogPolling()
   } finally {
     if (!silent) {
       loadingLogs.value = false
@@ -3728,6 +3740,7 @@ onBeforeUnmount(() => {
             <div class="agent-log-toolbar__status">
               <span class="agent-log-toolbar__dot" :class="{ 'is-live': isLogModalLive }" />
               <span>{{ logModalHint }}</span>
+              <span v-if="commandLogs.length">共 {{ commandLogs.length }} 行</span>
             </div>
             <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新日志" @click="refreshLogModal()">↻</NButton>
           </div>
@@ -3736,14 +3749,8 @@ onBeforeUnmount(() => {
             <NSpin size="large" />
           </div>
 
-          <div v-else-if="commandLogs.length" ref="logListRef" class="agent-log-list agent-log-list--terminal">
-            <article v-for="log in commandLogs" :key="log.id" class="agent-log-item">
-              <div class="agent-log-item__meta">
-                <span>{{ formatDateTime(log.createdAt) }}</span>
-                <span>{{ log.level }}</span>
-              </div>
-              <pre class="agent-log-item__message">{{ log.message }}</pre>
-            </article>
+          <div v-else-if="commandLogs.length" ref="logListRef" class="agent-log-terminal">
+            <pre class="agent-log-terminal__body">{{ logTerminalText }}</pre>
           </div>
 
           <div v-else class="hero-note min-h-[240px]">
@@ -4196,7 +4203,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-.agent-log-list--terminal {
+.agent-log-terminal {
   max-height: 440px;
   overflow: auto;
   padding: 12px;
@@ -4206,6 +4213,17 @@ onBeforeUnmount(() => {
     linear-gradient(180deg, rgba(17, 23, 37, 0.96), rgba(10, 14, 24, 0.98)),
     radial-gradient(circle at top, rgba(99, 226, 182, 0.08), transparent 42%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.agent-log-terminal__body {
+  margin: 0;
+  min-height: 100%;
+  color: #e9eef7;
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'Cascadia Mono', 'Consolas', 'SFMono-Regular', monospace;
 }
 
 .agent-command-card__summary,
