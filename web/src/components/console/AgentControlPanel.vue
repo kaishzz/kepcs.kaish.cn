@@ -226,7 +226,6 @@ const logListRef = ref<HTMLElement | null>(null)
 // Polling and post-save refresh can overlap; only the newest schedule response should win.
 let scheduleLoadRequestCursor = 0
 let visibleScheduleLoadCount = 0
-const LOGICAL_GROUPS = ['all', 'xl', 'pt', 'ks'] as const
 
 const controlNodeOptions = computed(() =>
   nodes.value.map((node) => ({
@@ -374,11 +373,11 @@ const selectedScheduleFormServers = computed<ManagedNodeHeartbeatServerItem[]>((
 })
 
 const selectedNodeGroups = computed(() => {
-  return resolveLogicalGroups(selectedNodeServers.value)
+  return resolveLogicalGroups(selectedNodeServers.value, selectedNode.value)
 })
 
 const selectedScheduleNodeGroups = computed(() => {
-  return resolveLogicalGroups(selectedScheduleFormServers.value)
+  return resolveLogicalGroups(selectedScheduleFormServers.value, selectedScheduleFormNode.value)
 })
 
 const groupOptions = computed(() => [
@@ -741,11 +740,51 @@ function serverStateText(server: ManagedNodeHeartbeatServerItem) {
   return state
 }
 
-function serverGroupsText(server: ManagedNodeHeartbeatServerItem) {
-  const groups = (server.groups || []).filter((group) =>
-    LOGICAL_GROUPS.includes(String(group || '').trim() as typeof LOGICAL_GROUPS[number]),
+function normalizeGroupList(groups: unknown) {
+  const values = Array.isArray(groups) ? groups : []
+  return Array.from(
+    new Set(
+      values
+        .map((group) => String(group || '').trim())
+        .filter(Boolean),
+    ),
   )
-  return groups.length ? groups.map((group) => resolveGroupLabel(group)).join(' / ') : '未分组'
+}
+
+function resolveGroupOrder(node: ManagedNodeItem | null = selectedNode.value) {
+  const metadata = node?.lastHeartbeat?.metadata || {}
+  const rawOrder =
+    (Array.isArray(metadata.groupOrder) ? metadata.groupOrder : null)
+    || (Array.isArray(metadata.group_order) ? metadata.group_order : null)
+    || []
+
+  return normalizeGroupList(rawOrder)
+}
+
+function sortGroups(groups: string[], node: ManagedNodeItem | null = selectedNode.value) {
+  const order = resolveGroupOrder(node)
+  if (!order.length) {
+    return [...groups].sort((left, right) => left.localeCompare(right, 'zh-CN'))
+  }
+
+  const rank = new Map(order.map((group, index) => [group, index]))
+  return [...groups].sort((left, right) => {
+    const leftRank = rank.has(left) ? (rank.get(left) as number) : Number.MAX_SAFE_INTEGER
+    const rightRank = rank.has(right) ? (rank.get(right) as number) : Number.MAX_SAFE_INTEGER
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank
+    }
+
+    return left.localeCompare(right, 'zh-CN')
+  })
+}
+
+function serverGroupsText(
+  server: ManagedNodeHeartbeatServerItem,
+  node: ManagedNodeItem | null = selectedNode.value,
+) {
+  const groups = sortGroups(normalizeGroupList(server.groups), node)
+  return groups.length ? groups.map((group) => resolveGroupLabel(group, node)).join(' / ') : '未分组'
 }
 
 function serverImageText(server: ManagedNodeHeartbeatServerItem) {
@@ -768,18 +807,18 @@ const startSelectionCommandTypes = [
   'node.monitor_start',
 ] as const
 
-function resolveLogicalGroups(servers: ManagedNodeHeartbeatServerItem[]) {
+function resolveLogicalGroups(
+  servers: ManagedNodeHeartbeatServerItem[],
+  node: ManagedNodeItem | null = selectedNode.value,
+) {
   const values = new Set<string>()
   servers.forEach((server) => {
-    ;(server.groups || []).forEach((group) => {
-      const safeGroup = String(group || '').trim()
-      if (safeGroup && LOGICAL_GROUPS.includes(safeGroup as typeof LOGICAL_GROUPS[number])) {
-        values.add(safeGroup)
-      }
+    normalizeGroupList(server.groups).forEach((group) => {
+      values.add(group)
     })
   })
 
-  return Array.from(values).sort((left, right) => left.localeCompare(right, 'zh-CN'))
+  return sortGroups(Array.from(values), node)
 }
 
 function buildServerSelectLabel(server: ManagedNodeHeartbeatServerItem) {
@@ -831,7 +870,7 @@ function resolveServerChoiceLabel(
 function resolveStartTargetsLabel(
   servers: ManagedNodeHeartbeatServerItem[],
   keys: string[],
-  fallback = '默认启动除监控服外的全部服务器',
+  fallback = '默认启动 Agent 配置中允许自动启动的服务器',
 ) {
   if (!keys.length) {
     return fallback
@@ -2889,7 +2928,7 @@ onBeforeUnmount(() => {
                         filterable
                         max-tag-count="responsive"
                         :options="maintenanceStartServerOptions"
-                        placeholder="不选则默认启动除监控服外的全部服务器"
+                        placeholder="不选则按 Agent 配置自动选择启动目标"
                       />
                     </NFormItem>
                   </NForm>
@@ -2897,7 +2936,7 @@ onBeforeUnmount(() => {
                     检查更新 / 崩溃检查 / 崩溃检查后启动都会直接使用 Agent 默认监控服。
                   </div>
                   <div class="agent-command-card__summary">
-                    需要“崩溃检查成功后启动”时，可以在这里多选要启动的服务器；不选则默认启动除监控服外的全部服务器。
+                    需要“崩溃检查成功后启动”时，可以在这里多选要启动的服务器；不选则按 Agent YAML 里的自动启动配置执行。
                   </div>
                 </section>
 
@@ -3233,7 +3272,7 @@ onBeforeUnmount(() => {
                       filterable
                       max-tag-count="responsive"
                       :options="scheduleStartServerOptions"
-                      placeholder="不选则默认启动除监控服外的全部服务器"
+                      placeholder="不选则按 Agent 配置自动选择启动目标"
                     />
                   </NFormItem>
                   <NFormItem
@@ -3243,7 +3282,7 @@ onBeforeUnmount(() => {
                   >
                     <div class="agent-schedule-rule-note">
                       <strong>监控服固定使用 Agent 默认配置</strong>
-                      <span>不选择启动目标时，默认启动除监控服外的全部服务器。</span>
+                      <span>不选择启动目标时，会按 Agent YAML 里的自动启动配置执行。</span>
                     </div>
                   </NFormItem>
                   <NFormItem v-if="scheduleForm.commandType === 'node.rcon_command'" label="RCON 目标分组">

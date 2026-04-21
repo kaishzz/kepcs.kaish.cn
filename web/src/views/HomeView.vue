@@ -9,7 +9,7 @@ import { buildNavItems } from '../lib/navigation'
 import { pushToast } from '../lib/toast'
 import type { ServerListItem } from '../types'
 
-type ServerFilterKey = 'all' | 'ze_practice' | 'ze' | 'idle'
+type ServerFilterKey = 'all' | 'ze_xl' | 'ze_pt' | 'idle'
 
 const serverListInitialized = ref(false)
 const serverListLoading = ref(false)
@@ -27,20 +27,20 @@ const totalOnlinePlayers = computed(() =>
 )
 
 const modeMetaMap: Record<string, string> = {
-  ze_practice: '训练服',
-  ze: '跑图服',
+  ze_xl: '训练服',
+  ze_pt: '跑图服',
 }
 
 const filterOptions = computed(() => [
   {
-    key: 'ze_practice' as const,
+    key: 'ze_xl' as const,
     label: '训练服',
-    count: servers.value.filter((server) => server.mode === 'ze_practice').length,
+    count: servers.value.filter((server) => server.mode === 'ze_xl').length,
   },
   {
-    key: 'ze' as const,
+    key: 'ze_pt' as const,
     label: '跑图服',
-    count: servers.value.filter((server) => server.mode === 'ze').length,
+    count: servers.value.filter((server) => server.mode === 'ze_pt').length,
   },
   {
     key: 'idle' as const,

@@ -160,7 +160,7 @@ const serverTrendChartOption = computed(() => {
         symbol: 'none',
         itemStyle: { color: '#58b6ff' },
         lineStyle: { width: 3, color: '#58b6ff' },
-        data: points.map((item) => item.practiceTotal),
+        data: points.map((item) => item.xlTotal),
       },
       {
         name: '跑图服总数',
@@ -170,7 +170,7 @@ const serverTrendChartOption = computed(() => {
         symbol: 'none',
         itemStyle: { color: '#ffb454' },
         lineStyle: { width: 3, color: '#ffb454' },
-        data: points.map((item) => item.zeTotal),
+        data: points.map((item) => item.ptTotal),
       },
       {
         name: '训练服占用',
@@ -180,7 +180,7 @@ const serverTrendChartOption = computed(() => {
         symbol: 'none',
         itemStyle: { color: '#b388ff' },
         lineStyle: { width: 3, color: '#b388ff' },
-        data: points.map((item) => item.practiceOccupied),
+        data: points.map((item) => item.xlOccupied),
       },
       {
         name: '跑图服占用',
@@ -190,7 +190,7 @@ const serverTrendChartOption = computed(() => {
         symbol: 'none',
         itemStyle: { color: '#ff7d66' },
         lineStyle: { width: 3, color: '#ff7d66' },
-        data: points.map((item) => item.zeOccupied),
+        data: points.map((item) => item.ptOccupied),
       },
     ],
   }

@@ -22,7 +22,6 @@ function normalizeServer(row) {
 
   return {
     id: String(row?.id ?? `${host}:${port}`),
-    shotid: String(row?.shotid || ""),
     mode: String(row?.mode || "unknown"),
     name: String(row?.name || ""),
     serverName: String(row?.server_name || row?.serverName || ""),

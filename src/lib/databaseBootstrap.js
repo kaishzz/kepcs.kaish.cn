@@ -49,6 +49,31 @@ async function ensureTableColumn(connection, databaseName, tableName, columnName
   );
 }
 
+async function dropTableColumn(connection, databaseName, tableName, columnName) {
+  if (!await columnExists(connection, databaseName, tableName, columnName)) {
+    return;
+  }
+
+  await connection.query(
+    `ALTER TABLE ${escapeIdentifier(tableName)} DROP COLUMN ${escapeIdentifier(columnName)}`,
+  );
+}
+
+async function renameTableColumn(connection, databaseName, tableName, oldColumnName, newColumnName, definitionSql) {
+  if (!await columnExists(connection, databaseName, tableName, oldColumnName)) {
+    return;
+  }
+
+  if (await columnExists(connection, databaseName, tableName, newColumnName)) {
+    await dropTableColumn(connection, databaseName, tableName, oldColumnName);
+    return;
+  }
+
+  await connection.query(
+    `ALTER TABLE ${escapeIdentifier(tableName)} CHANGE COLUMN ${escapeIdentifier(oldColumnName)} ${escapeIdentifier(newColumnName)} ${definitionSql}`,
+  );
+}
+
 function parseMysqlUrl(databaseUrl) {
   const url = new URL(databaseUrl.replace(/^mysql:\/\//i, "mysql://"));
 
@@ -275,10 +300,10 @@ async function ensureCdkTables(config) {
       CREATE TABLE IF NOT EXISTS \`ServerTrendSnapshot\` (
         \`id\` VARCHAR(191) NOT NULL,
         \`bucketAt\` DATETIME(3) NOT NULL,
-        \`practiceTotal\` INT NOT NULL DEFAULT 0,
-        \`zeTotal\` INT NOT NULL DEFAULT 0,
-        \`practiceOccupied\` INT NOT NULL DEFAULT 0,
-        \`zeOccupied\` INT NOT NULL DEFAULT 0,
+        \`xlTotal\` INT NOT NULL DEFAULT 0,
+        \`ptTotal\` INT NOT NULL DEFAULT 0,
+        \`xlOccupied\` INT NOT NULL DEFAULT 0,
+        \`ptOccupied\` INT NOT NULL DEFAULT 0,
         \`onlinePlayers\` INT NOT NULL DEFAULT 0,
         \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
         \`updatedAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
@@ -287,6 +312,17 @@ async function ensureCdkTables(config) {
         KEY \`ServerTrendSnapshot_bucketAt_idx\` (\`bucketAt\`)
       ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    if (await tableExists(connection, config.database, "ServerTrendSnapshot")) {
+      await renameTableColumn(connection, config.database, "ServerTrendSnapshot", "practiceTotal", "xlTotal", "INT NOT NULL DEFAULT 0");
+      await renameTableColumn(connection, config.database, "ServerTrendSnapshot", "zeTotal", "ptTotal", "INT NOT NULL DEFAULT 0");
+      await renameTableColumn(connection, config.database, "ServerTrendSnapshot", "practiceOccupied", "xlOccupied", "INT NOT NULL DEFAULT 0");
+      await renameTableColumn(connection, config.database, "ServerTrendSnapshot", "zeOccupied", "ptOccupied", "INT NOT NULL DEFAULT 0");
+      await ensureTableColumn(connection, config.database, "ServerTrendSnapshot", "xlTotal", "INT NOT NULL DEFAULT 0");
+      await ensureTableColumn(connection, config.database, "ServerTrendSnapshot", "ptTotal", "INT NOT NULL DEFAULT 0");
+      await ensureTableColumn(connection, config.database, "ServerTrendSnapshot", "xlOccupied", "INT NOT NULL DEFAULT 0");
+      await ensureTableColumn(connection, config.database, "ServerTrendSnapshot", "ptOccupied", "INT NOT NULL DEFAULT 0");
+    }
 
     await connection.query(`
       CREATE TABLE IF NOT EXISTS \`SiteSetting\` (
@@ -566,7 +602,6 @@ async function ensureServerCatalogTables(databaseUrl) {
     await connection.query(`
       CREATE TABLE IF NOT EXISTS \`servers\` (
         \`id\` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        \`shotid\` VARCHAR(64) NOT NULL,
         \`mode\` VARCHAR(32) NOT NULL DEFAULT '',
         \`name\` VARCHAR(191) NOT NULL,
         \`host\` VARCHAR(191) NOT NULL,
@@ -604,6 +639,7 @@ async function ensureServerCatalogTables(databaseUrl) {
     `);
 
     if (await tableExists(connection, config.database, "servers")) {
+      await dropTableColumn(connection, config.database, "servers", "shotid");
       await ensureTableColumn(connection, config.database, "servers", "default_map_monitor_enabled", "TINYINT(1) NOT NULL DEFAULT 0");
       await ensureTableColumn(connection, config.database, "servers", "default_map_idle_threshold_seconds", "INT NOT NULL DEFAULT 300");
       await ensureTableColumn(connection, config.database, "servers", "idle_restart_enabled", "TINYINT(1) NOT NULL DEFAULT 0");

@@ -16,14 +16,14 @@ function floorToBucket(date = new Date()) {
 
 function summarizeServerList(payload) {
   const servers = Array.isArray(payload?.servers) ? payload.servers : [];
-  const practiceServers = servers.filter((server) => String(server?.mode || "").trim() === "ze_practice");
-  const zeServers = servers.filter((server) => String(server?.mode || "").trim() === "ze");
+  const xlServers = servers.filter((server) => String(server?.mode || "").trim() === "ze_xl");
+  const ptServers = servers.filter((server) => String(server?.mode || "").trim() === "ze_pt");
 
   return {
-    practiceTotal: practiceServers.length,
-    zeTotal: zeServers.length,
-    practiceOccupied: practiceServers.filter((server) => Number(server?.currentPlayers || 0) > 0).length,
-    zeOccupied: zeServers.filter((server) => Number(server?.currentPlayers || 0) > 0).length,
+    xlTotal: xlServers.length,
+    ptTotal: ptServers.length,
+    xlOccupied: xlServers.filter((server) => Number(server?.currentPlayers || 0) > 0).length,
+    ptOccupied: ptServers.filter((server) => Number(server?.currentPlayers || 0) > 0).length,
     onlinePlayers: servers.reduce((sum, server) => sum + Number(server?.currentPlayers || 0), 0),
   };
 }
@@ -119,10 +119,10 @@ async function listServerTrendSnapshots({ hours = 48 } = {}) {
     sampleMinutes: SAMPLE_INTERVAL_MINUTES,
     points: rows.map((row) => ({
       bucketAt: row.bucketAt.toISOString(),
-      practiceTotal: row.practiceTotal,
-      zeTotal: row.zeTotal,
-      practiceOccupied: row.practiceOccupied,
-      zeOccupied: row.zeOccupied,
+      xlTotal: row.xlTotal,
+      ptTotal: row.ptTotal,
+      xlOccupied: row.xlOccupied,
+      ptOccupied: row.ptOccupied,
       onlinePlayers: row.onlinePlayers,
     })),
   };

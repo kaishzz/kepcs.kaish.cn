@@ -47,8 +47,8 @@ test("node command payload sanitization keeps target keys and removes rcon secre
     command: "status",
     targetMode: "servers",
     targets: [
-      { key: "xl1", password: "secret-1" },
-      { key: "xl2", password: "secret-2" },
+      { key: "ze_xl_1", password: "secret-1" },
+      { key: "ze_xl_2", password: "secret-2" },
       { key: "", password: "ignored" },
     ],
   });
@@ -56,19 +56,19 @@ test("node command payload sanitization keeps target keys and removes rcon secre
   assert.deepEqual(payload, {
     command: "status",
     targetMode: "servers",
-    targets: [{ key: "xl1" }, { key: "xl2" }],
-    serverKeys: ["xl1", "xl2"],
+    targets: [{ key: "ze_xl_1" }, { key: "ze_xl_2" }],
+    serverKeys: ["ze_xl_1", "ze_xl_2"],
   });
 });
 
 test("node command payload sanitization normalizes monitor and startup server selections", () => {
   const payload = sanitizeNodeCommandPayload({
-    monitorServerKey: " ks ",
-    startServerKeys: [" xl1 ", "pt1", "xl1", ""],
+    monitorServerKey: " ze_xl_test ",
+    startServerKeys: [" ze_xl_1 ", "ze_pt_1", "ze_xl_1", ""],
   });
 
   assert.deepEqual(payload, {
-    monitorServerKey: "ks",
-    startServerKeys: ["xl1", "pt1"],
+    monitorServerKey: "ze_xl_test",
+    startServerKeys: ["ze_xl_1", "ze_pt_1"],
   });
 });

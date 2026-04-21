@@ -148,7 +148,6 @@ export interface AppNavItem {
 
 export interface ServerListItem {
   id: string
-  shotid: string
   mode: string
   name: string
   serverName: string
@@ -201,10 +200,10 @@ export interface PlayerStatsSnapshot {
 
 export interface ServerTrendPoint {
   bucketAt: string
-  practiceTotal: number
-  zeTotal: number
-  practiceOccupied: number
-  zeOccupied: number
+  xlTotal: number
+  ptTotal: number
+  xlOccupied: number
+  ptOccupied: number
   onlinePlayers: number
 }
 
@@ -283,7 +282,6 @@ export interface ManagedNodeHeartbeatItem {
 
 export interface KepcsCatalogServerItem {
   id: string
-  shotId: string
   mode: string
   name: string
   host: string
@@ -363,7 +361,6 @@ export interface IdleRestartMonitorRuntimeSummary {
 export interface IdleRestartMonitorRestartItem {
   serverId: string
   name: string
-  shotId: string
   endpoint: string
   nodeId: string
   nodeName: string

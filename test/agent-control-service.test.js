@@ -13,7 +13,7 @@ test("serializeNodeCommand keeps rcon target passwords for agent-facing payloads
       command: "status",
       targetMode: "servers",
       targets: [
-        { key: "xl1", password: "secret-1" },
+        { key: "ze_xl_1", password: "secret-1" },
       ],
     },
     status: "PENDING",
@@ -32,13 +32,13 @@ test("serializeNodeCommand keeps rcon target passwords for agent-facing payloads
   assert.deepEqual(serializeNodeCommand(row).payload, {
     command: "status",
     targetMode: "servers",
-    targets: [{ key: "xl1" }],
-    serverKeys: ["xl1"],
+    targets: [{ key: "ze_xl_1" }],
+    serverKeys: ["ze_xl_1"],
   });
 
   assert.deepEqual(serializeNodeCommand(row, { includeSecrets: true }).payload, {
     command: "status",
     targetMode: "servers",
-    targets: [{ key: "xl1", password: "secret-1" }],
+    targets: [{ key: "ze_xl_1", password: "secret-1" }],
   });
 });

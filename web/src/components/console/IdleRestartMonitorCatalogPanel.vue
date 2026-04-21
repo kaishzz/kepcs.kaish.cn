@@ -85,7 +85,6 @@ const policyModal = ref({
   id: '',
   name: '',
   endpoint: '',
-  shotId: '',
   enabled: false,
   idleThresholdSeconds: 300,
   windowStart: '02:00',
@@ -139,8 +138,8 @@ function formatDateTime(value?: string | null) {
   return `${year}-${month}-${day} ${hour}:${minute}:${second}`
 }
 
-function resolveReadiness(row: KepcsCatalogServerItem) {
-  return String(row.shotId || '').trim() ? '已完整' : '缺少 ShotID'
+function resolveMatchTarget(row: KepcsCatalogServerItem) {
+  return row.port > 0 ? `端口 ${row.port}` : '端口未配置'
 }
 
 function formatWindow(row: KepcsCatalogServerItem) {
@@ -211,7 +210,6 @@ function openPolicyModal(row: KepcsCatalogServerItem) {
     id: row.id,
     name: row.name,
     endpoint: `${row.host}:${row.port}`,
-    shotId: row.shotId,
     enabled: row.idleRestartEnabled,
     idleThresholdSeconds: row.idleRestartThresholdSeconds,
     windowStart: row.idleRestartWindowStart,
@@ -369,7 +367,6 @@ const columns = computed<DataTableColumns<KepcsCatalogServerItem>>(() => [
   },
   { title: 'ID', key: 'id', width: 64 },
   { title: '名称', key: 'name', width: 132, ellipsis: { tooltip: true } },
-  { title: 'ShotID', key: 'shotId', width: 96, ellipsis: { tooltip: true } },
   {
     title: '地址',
     key: 'endpoint',
@@ -396,10 +393,10 @@ const columns = computed<DataTableColumns<KepcsCatalogServerItem>>(() => [
     render: (row) => `${row.idleRestartCooldownSeconds}s`,
   },
   {
-    title: '前置配置',
-    key: 'readiness',
-    width: 140,
-    render: (row) => resolveReadiness(row),
+    title: '匹配目标',
+    key: 'matchTarget',
+    width: 120,
+    render: (row) => resolveMatchTarget(row),
   },
   {
     title: '状态',
@@ -567,7 +564,7 @@ watch(
             class="catalog-monitor-switch"
           >
             <strong>{{ item.name }}</strong>
-            <span>{{ item.shotId || item.serverKey }} · {{ item.nodeName }}</span>
+            <span>{{ item.serverKey }} · {{ item.nodeName }}</span>
             <span>{{ item.endpoint }} · {{ formatDateTime(item.restartedAt) }}</span>
           </article>
         </div>
@@ -578,7 +575,7 @@ watch(
       <div class="catalog-policy-summary">
         <strong>{{ policyModal.name }}</strong>
         <span>{{ policyModal.endpoint }}</span>
-        <span>ShotID {{ policyModal.shotId || '-' }}</span>
+        <span>按端口匹配 Agent 容器</span>
       </div>
 
       <NForm label-placement="top" class="console-field-grid cols-2">

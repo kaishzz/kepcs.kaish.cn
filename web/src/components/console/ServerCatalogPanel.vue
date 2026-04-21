@@ -36,7 +36,6 @@ import type {
 type CatalogTab = 'kepcs' | 'default-map-monitor' | 'idle-restart-monitor' | 'community'
 
 interface KepcsCatalogFormState {
-  shotId: string
   mode: string
   name: string
   host: string
@@ -60,7 +59,6 @@ interface EditModalState {
   show: boolean
   scope: CatalogTab
   id: string
-  shotId: string
   mode: string
   community: string
   name: string
@@ -154,7 +152,6 @@ const idleRestartRuntime = ref<IdleRestartMonitorRuntime>({
 
 function createEmptyKepcsForm(): KepcsCatalogFormState {
   return {
-    shotId: '',
     mode: '',
     name: '',
     host: '',
@@ -182,7 +179,6 @@ function createEmptyEditModal(): EditModalState {
     show: false,
     scope: 'kepcs',
     id: '',
-    shotId: '',
     mode: '',
     community: '',
     name: '',
@@ -374,7 +370,6 @@ async function createKepcsServer() {
 
   try {
     await http.post('/console/api/server-catalog/kepcs', {
-      shotId: kepcsForm.value.shotId.trim(),
       mode: kepcsForm.value.mode.trim(),
       name: kepcsForm.value.name.trim(),
       host: kepcsForm.value.host.trim(),
@@ -421,7 +416,6 @@ function openKepcsEditor(row: KepcsCatalogServerItem) {
     show: true,
     scope: 'kepcs',
     id: row.id,
-    shotId: row.shotId,
     mode: row.mode,
     community: '',
     name: row.name,
@@ -441,7 +435,6 @@ function openCommunityEditor(row: CommunityCatalogServerItem) {
     show: true,
     scope: 'community',
     id: row.id,
-    shotId: '',
     mode: '',
     community: row.community,
     name: row.name,
@@ -462,7 +455,6 @@ async function saveEditor() {
   try {
     if (editModal.value.scope === 'kepcs') {
       await http.patch(`/console/api/server-catalog/kepcs/${encodeURIComponent(editModal.value.id)}`, {
-        shotId: editModal.value.shotId.trim(),
         mode: editModal.value.mode.trim(),
         name: editModal.value.name.trim(),
         host: editModal.value.host.trim(),
@@ -590,7 +582,6 @@ function confirmDeleteCommunity(row: CommunityCatalogServerItem) {
 
 const kepcsColumns = computed<DataTableColumns<KepcsCatalogServerItem>>(() => [
   { title: 'ID', key: 'id', width: 64 },
-  { title: 'ShotID', key: 'shotId', width: 88, ellipsis: { tooltip: true } },
   { title: '模式', key: 'mode', width: 92, ellipsis: { tooltip: true } },
   { title: '名称', key: 'name', width: 108, ellipsis: { tooltip: true } },
   {
@@ -680,7 +671,6 @@ const communityColumns = computed<DataTableColumns<CommunityCatalogServerItem>>(
 
 function entryListForKepcs(row: KepcsCatalogServerItem) {
   return [
-    { label: 'ShotID', value: row.shotId || '-' },
     { label: '模式', value: row.mode || '-' },
     { label: '主机', value: row.host || '-' },
     { label: '端口', value: String(row.port || '-') },
@@ -762,9 +752,6 @@ watch(
 
           <ConsoleSectionBlock :title="activeTab === 'kepcs' ? '新增开水服服务器' : '新增社区服'">
             <NForm v-if="activeTab === 'kepcs'" label-placement="top" class="console-field-grid cols-2">
-              <NFormItem label="ShotID">
-                <NInput v-model:value="kepcsForm.shotId" />
-              </NFormItem>
               <NFormItem label="模式">
                 <NInput v-model:value="kepcsForm.mode" />
               </NFormItem>
@@ -888,7 +875,7 @@ watch(
                   :columns="activeTab === 'kepcs' ? kepcsColumns : communityColumns"
                   :data="currentRows"
                   :bordered="false"
-                  :scroll-x="activeTab === 'kepcs' ? 1080 : 744"
+                  :scroll-x="activeTab === 'kepcs' ? 980 : 744"
                 />
               </div>
             </div>
@@ -911,9 +898,6 @@ watch(
     >
       <NForm label-placement="top" class="console-field-grid cols-2">
         <template v-if="editModal.scope === 'kepcs'">
-          <NFormItem label="ShotID">
-            <NInput v-model:value="editModal.shotId" />
-          </NFormItem>
           <NFormItem label="模式">
             <NInput v-model:value="editModal.mode" />
           </NFormItem>

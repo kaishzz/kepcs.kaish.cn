@@ -8,7 +8,6 @@ const DEFAULT_IDLE_RESTART_COOLDOWN_SECONDS = 1800;
 
 const KEPCS_SERVER_SELECT_FIELDS = [
   "id",
-  "shotid",
   "mode",
   "name",
   "host",
@@ -48,7 +47,6 @@ function normalizeTimeValue(value, fallback) {
 function normalizeKepcsServer(row, { includeSecrets = false } = {}) {
   const normalized = {
     id: String(row?.id ?? ""),
-    shotId: String(row?.shotid || row?.shotId || ""),
     mode: String(row?.mode || ""),
     name: String(row?.name || ""),
     host: String(row?.host || ""),
@@ -170,7 +168,6 @@ async function createKepcsServer(payload) {
   const [result] = await pool.execute(
     `
       INSERT INTO servers (
-        shotid,
         name,
         host,
         port,
@@ -187,10 +184,9 @@ async function createKepcsServer(payload) {
         idle_restart_threshold_seconds,
         idle_restart_cooldown_seconds
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
-      String(payload.shotid || "").trim(),
       String(payload.name || "").trim(),
       String(payload.host || "").trim(),
       Number(payload.port),
@@ -230,11 +226,6 @@ async function createKepcsServer(payload) {
 async function updateKepcsServer(id, payload) {
   const assignments = [];
   const values = [];
-
-  if (Object.prototype.hasOwnProperty.call(payload, "shotid")) {
-    assignments.push("shotid = ?");
-    values.push(String(payload.shotid || "").trim());
-  }
 
   if (Object.prototype.hasOwnProperty.call(payload, "mode")) {
     assignments.push("mode = ?");

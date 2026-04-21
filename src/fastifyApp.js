@@ -867,7 +867,6 @@ const gotifyTestSchema = z.object({
 });
 
 const kepcsServerCreateSchema = z.object({
-  shotId: z.string().trim().min(1, "ShotID 不能为空").max(64, "ShotID 不能超过 64 个字符"),
   mode: z.string().trim().min(1, "模式不能为空").max(32, "模式不能超过 32 个字符"),
   name: z.string().trim().min(1, "名称不能为空").max(191, "名称不能超过 191 个字符"),
   host: z.string().trim().min(1, "主机地址不能为空").max(191, "主机地址不能超过 191 个字符"),
@@ -879,7 +878,6 @@ const kepcsServerCreateSchema = z.object({
 });
 
 const kepcsServerUpdateSchema = z.object({
-  shotId: z.string().trim().min(1, "ShotID 不能为空").max(64, "ShotID 不能超过 64 个字符").optional(),
   mode: z.string().trim().min(1, "模式不能为空").max(32, "模式不能超过 32 个字符").optional(),
   name: z.string().trim().min(1, "名称不能为空").max(191, "名称不能超过 191 个字符").optional(),
   host: z.string().trim().min(1, "主机地址不能为空").max(191, "主机地址不能超过 191 个字符").optional(),
@@ -1291,10 +1289,10 @@ async function resolveNodeRconCommandPayload(nodeId, payload = {}) {
 
   const targetServerKeys = normalizeNodeCommandServerKeys(targetServers.map((server) => server?.key));
   const catalogServers = await listKepcsServers({ includeSecrets: true });
-  const catalogByShotId = new Map(
+  const catalogByPort = new Map(
     catalogServers
-      .map((server) => [String(server?.shotId || "").trim(), server])
-      .filter(([shotId]) => shotId),
+      .map((server) => [Number(server?.port || 0), server])
+      .filter(([port]) => port > 0),
   );
 
   const missingCatalogKeys = [];
@@ -1302,7 +1300,9 @@ async function resolveNodeRconCommandPayload(nodeId, payload = {}) {
   const targets = [];
 
   for (const serverKey of targetServerKeys) {
-    const catalogServer = catalogByShotId.get(serverKey);
+    const heartbeatServer = heartbeatByKey.get(serverKey);
+    const primaryPort = Number(heartbeatServer?.primaryPort || 0);
+    const catalogServer = primaryPort > 0 ? catalogByPort.get(primaryPort) : null;
     if (!catalogServer) {
       missingCatalogKeys.push(serverKey);
       continue;
@@ -1321,7 +1321,7 @@ async function resolveNodeRconCommandPayload(nodeId, payload = {}) {
   }
 
   if (missingCatalogKeys.length) {
-    throw new Error(`以下服务器未在官网服务器目录中找到: ${missingCatalogKeys.join(", ")}`);
+    throw new Error(`以下服务器未在官网服务器目录中找到端口匹配项: ${missingCatalogKeys.join(", ")}`);
   }
 
   if (missingPasswordKeys.length) {
@@ -1344,14 +1344,6 @@ function assertDefaultMapMonitorServerConfig(server) {
 
   if (!defaultMap || !defaultMapId || !rconPassword) {
     throw new Error("启用空服自动换图前，请先补齐默认地图、WorkshopID 和 RCON 密码");
-  }
-}
-
-function assertIdleRestartMonitorServerConfig(server) {
-  const shotId = String(server?.shotId || "").trim();
-
-  if (!shotId) {
-    throw new Error("启用空服自动重启前，请先为该服务器填写 ShotID");
   }
 }
 
@@ -1404,19 +1396,6 @@ async function updateDefaultMapMonitorServers(ids, payload) {
   return Promise.all(targetIds.map((id) => updateKepcsServer(id, nextPayload)));
 }
 
-function buildIdleRestartMonitorNextServer(currentServer, payload) {
-  return {
-    ...currentServer,
-    idleRestartEnabled: payload.enabled ?? currentServer.idleRestartEnabled,
-    idleRestartWindowStart: payload.windowStart ?? currentServer.idleRestartWindowStart,
-    idleRestartWindowEnd: payload.windowEnd ?? currentServer.idleRestartWindowEnd,
-    idleRestartThresholdSeconds:
-      payload.idleThresholdSeconds ?? currentServer.idleRestartThresholdSeconds,
-    idleRestartCooldownSeconds:
-      payload.restartCooldownSeconds ?? currentServer.idleRestartCooldownSeconds,
-  };
-}
-
 function buildIdleRestartMonitorServerPatch(payload) {
   return {
     ...(payload.enabled !== undefined ? { idle_restart_enabled: payload.enabled } : {}),
@@ -1429,17 +1408,6 @@ function buildIdleRestartMonitorServerPatch(payload) {
 
 async function updateIdleRestartMonitorServers(ids, payload) {
   const targetIds = uniqueServerIds(ids);
-  const currentServers = await Promise.all(
-    targetIds.map((id) => findKepcsServerById(id, { includeSecrets: true })),
-  );
-  const nextServers = currentServers.map((server) => buildIdleRestartMonitorNextServer(server, payload));
-
-  nextServers.forEach((server) => {
-    if (server.idleRestartEnabled) {
-      assertIdleRestartMonitorServerConfig(server);
-    }
-  });
-
   const nextPayload = buildIdleRestartMonitorServerPatch(payload);
   return Promise.all(targetIds.map((id) => updateKepcsServer(id, nextPayload)));
 }
@@ -3507,10 +3475,6 @@ async function createFastifyApp() {
         return sendNotFoundError(reply, "服务器不存在");
       }
 
-      if (error?.message === "启用空服自动重启前，请先为该服务器填写 ShotID") {
-        return reply.code(400).send({ success: false, message: error.message });
-      }
-
       throw error;
     }
   });
@@ -3546,10 +3510,6 @@ async function createFastifyApp() {
 
       if (error?.message === "Server not found") {
         return sendNotFoundError(reply, "服务器不存在");
-      }
-
-      if (error?.message === "启用空服自动重启前，请先为该服务器填写 ShotID") {
-        return reply.code(400).send({ success: false, message: error.message });
       }
 
       throw error;
@@ -3594,7 +3554,6 @@ async function createFastifyApp() {
       const payload = kepcsServerCreateSchema.parse(request.body || {});
       const user = getSessionUser(request);
       const server = await createKepcsServer({
-        shotid: payload.shotId,
         mode: payload.mode,
         name: payload.name,
         host: payload.host,
@@ -3633,7 +3592,6 @@ async function createFastifyApp() {
       const payload = kepcsServerUpdateSchema.parse(request.body || {});
       const user = getSessionUser(request);
       const server = await updateKepcsServer(request.params.id, {
-        ...(Object.prototype.hasOwnProperty.call(payload, "shotId") ? { shotid: payload.shotId } : {}),
         ...(Object.prototype.hasOwnProperty.call(payload, "mode") ? { mode: payload.mode } : {}),
         ...(Object.prototype.hasOwnProperty.call(payload, "name") ? { name: payload.name } : {}),
         ...(Object.prototype.hasOwnProperty.call(payload, "host") ? { host: payload.host } : {}),

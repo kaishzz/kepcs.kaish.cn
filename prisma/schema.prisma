@@ -199,15 +199,15 @@ model DirectUserPermission {
 }
 
 model ServerTrendSnapshot {
-  id               String   @id @default(cuid())
-  bucketAt         DateTime @unique
-  practiceTotal    Int      @default(0)
-  zeTotal          Int      @default(0)
-  practiceOccupied Int      @default(0)
-  zeOccupied       Int      @default(0)
-  onlinePlayers    Int      @default(0)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id            String   @id @default(cuid())
+  bucketAt      DateTime @unique
+  xlTotal       Int      @default(0)
+  ptTotal       Int      @default(0)
+  xlOccupied    Int      @default(0)
+  ptOccupied    Int      @default(0)
+  onlinePlayers Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([bucketAt])
 }

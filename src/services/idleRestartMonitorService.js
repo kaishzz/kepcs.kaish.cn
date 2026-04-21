@@ -128,7 +128,6 @@ function recentRestartEntry(entry) {
   return {
     serverId: entry.serverId,
     name: entry.name,
-    shotId: entry.shotId,
     endpoint: entry.endpoint,
     nodeId: entry.nodeId,
     nodeName: entry.nodeName,
@@ -247,7 +246,6 @@ function findLiveServerStatus(serverListPayload, serverRow) {
 }
 
 function buildManagedServerIndex(nodes) {
-  const byKey = new Map();
   const byPort = new Map();
 
   for (const node of nodes) {
@@ -264,10 +262,6 @@ function buildManagedServerIndex(nodes) {
         primaryPort,
       };
 
-      if (serverKey && !byKey.has(serverKey)) {
-        byKey.set(serverKey, target);
-      }
-
       if (primaryPort > 0 && !byPort.has(primaryPort)) {
         byPort.set(primaryPort, target);
       }
@@ -275,18 +269,11 @@ function buildManagedServerIndex(nodes) {
   }
 
   return {
-    byKey,
     byPort,
   };
 }
 
 function resolveRestartTarget(serverRow, index) {
-  const shotId = String(serverRow?.shotId || "").trim();
-  if (shotId && index.byKey.has(shotId)) {
-    const target = index.byKey.get(shotId);
-    return target?.serverKey ? target : null;
-  }
-
   const port = Number(serverRow?.port || 0);
   if (port > 0 && index.byPort.has(port)) {
     const target = index.byPort.get(port);
@@ -351,7 +338,6 @@ async function queueRestartCommand(serverRow, target, auditContext) {
     recentRestartEntry({
       serverId: String(serverRow.id),
       name: serverRow.name,
-      shotId: serverRow.shotId,
       endpoint: `${serverRow.host}:${serverRow.port}`,
       nodeId: target.nodeId,
       nodeName: target.nodeName,
@@ -368,7 +354,6 @@ async function queueRestartCommand(serverRow, target, auditContext) {
     targetType: "kepcs-server",
     targetId: String(serverRow.id),
     detail: {
-      shotId: serverRow.shotId,
       host: serverRow.host,
       port: serverRow.port,
       nodeId: target.nodeId,
@@ -459,9 +444,7 @@ async function runIdleRestartMonitorSweep(options = {}) {
         continue;
       }
 
-      if (String(row?.shotId || "").trim()) {
-        eligibleCount += 1;
-      }
+      eligibleCount += 1;
 
       const restartTarget = resolveRestartTarget(row, index);
       if (restartTarget) {
