@@ -115,6 +115,7 @@ const CONSOLE_AUTH_BASE_PATH = "/console/auth";
 const MAX_DB_VARCHAR = 191;
 const MAX_QQ_LENGTH = 20;
 const MAX_AUDIT_TARGET_ID = 191;
+const AGENT_COMMAND_FINISH_BODY_LIMIT = 256 * 1024;
 
 function resolveClientIp(request) {
   const forwardedFor = request.headers["cf-connecting-ip"]
@@ -3854,7 +3855,7 @@ async function createFastifyApp() {
     }
   });
 
-  app.post("/agent/api/commands/:id/finish", { preHandler: [agentApiRateLimit, requireAgentNode] }, async (request, reply) => {
+  app.post("/agent/api/commands/:id/finish", { preHandler: [agentApiRateLimit, requireAgentNode], bodyLimit: AGENT_COMMAND_FINISH_BODY_LIMIT }, async (request, reply) => {
     try {
       const payload = agentCommandFinishSchema.parse(request.body || {});
       const command = await finishNodeCommand(request.agentNode.id, request.params.id, payload);
