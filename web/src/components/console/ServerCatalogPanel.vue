@@ -18,6 +18,7 @@ import { computed, h, ref, watch } from 'vue'
 
 import ConsoleMetricStrip from './ConsoleMetricStrip.vue'
 import ConsolePanelCard from './ConsolePanelCard.vue'
+import ConsoleRefreshIcon from './ConsoleRefreshIcon.vue'
 import ConsoleSectionBlock from './ConsoleSectionBlock.vue'
 import ConsoleSegmentedTabs from './ConsoleSegmentedTabs.vue'
 import DefaultMapMonitorCatalogPanel from './DefaultMapMonitorCatalogPanel.vue'
@@ -744,7 +745,9 @@ watch(
         >
           <template #header-extra>
             <div class="catalog-header-extra">
-              <NButton secondary class="console-action-icon" title="刷新列表" @click="loadCurrentTab">↻</NButton>
+                <NButton secondary class="console-action-icon" title="刷新列表" @click="loadCurrentTab">
+                  <ConsoleRefreshIcon />
+                </NButton>
             </div>
           </template>
 

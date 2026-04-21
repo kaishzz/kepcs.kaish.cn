@@ -24,6 +24,7 @@ import { pushToast } from '../../lib/toast'
 import GotifyNotificationPanel from './GotifyNotificationPanel.vue'
 import ConsoleMetricStrip from './ConsoleMetricStrip.vue'
 import ConsolePanelCard from './ConsolePanelCard.vue'
+import ConsoleRefreshIcon from './ConsoleRefreshIcon.vue'
 import ConsoleSegmentedTabs from './ConsoleSegmentedTabs.vue'
 import type {
   GotifyChannelItem,
@@ -2675,7 +2676,9 @@ onBeforeUnmount(() => {
         <ConsolePanelCard v-if="agentPanelTab === 'nodes' && canViewNodesTab" title="节点管理" description="统一查看节点状态、基础信息和启停配置。">
           <template #header-extra>
             <NSpace size="small">
-              <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新列表" @click="refreshAll()">↻</NButton>
+              <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新列表" @click="refreshAll()">
+                <ConsoleRefreshIcon />
+              </NButton>
               <NButton v-if="props.canManageNodes" type="primary" @click="openCreateNodeModal">新增节点</NButton>
             </NSpace>
           </template>
@@ -2899,7 +2902,9 @@ onBeforeUnmount(() => {
                 <strong>{{ selectedNode.name }}</strong>
                 <span>{{ selectedNode.code }} · {{ selectedNode.host || '未填写主机地址' }}</span>
               </div>
-              <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">↻</NButton>
+                    <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">
+                      <ConsoleRefreshIcon />
+                    </NButton>
             </div>
 
             <div class="agent-command-sections">
@@ -2917,7 +2922,9 @@ onBeforeUnmount(() => {
                     </NFormItem>
                     <NFormItem label="快速刷新">
                       <div class="console-inline-actions">
-                        <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">↻</NButton>
+                    <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">
+                      <ConsoleRefreshIcon />
+                    </NButton>
                       </div>
                     </NFormItem>
                     <NFormItem label="崩溃检查成功后启动" class="col-span-full">
@@ -3009,7 +3016,9 @@ onBeforeUnmount(() => {
                     </NFormItem>
                     <NFormItem label="快速刷新">
                       <div class="console-inline-actions">
-                        <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">↻</NButton>
+                    <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">
+                      <ConsoleRefreshIcon />
+                    </NButton>
                       </div>
                     </NFormItem>
                     <NFormItem v-if="nodeCommandForm.rconTargetMode === 'group'" label="目标分组">
@@ -3062,7 +3071,9 @@ onBeforeUnmount(() => {
                     </NFormItem>
                     <NFormItem label="刷新">
                       <div class="console-inline-actions">
-                        <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新进行中命令" @click="loadActiveCommands()">↻</NButton>
+                    <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新进行中命令" @click="loadActiveCommands()">
+                      <ConsoleRefreshIcon />
+                    </NButton>
                       </div>
                     </NFormItem>
                   </NForm>
@@ -3316,7 +3327,9 @@ onBeforeUnmount(() => {
                     <strong>任务列表</strong>
                     <span>查看节点自动执行计划，可以直接编辑、启停和删除</span>
                   </div>
-                  <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新任务" @click="loadSchedules()">↻</NButton>
+                    <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新任务" @click="loadSchedules()">
+                      <ConsoleRefreshIcon />
+                    </NButton>
                 </div>
 
                 <NForm label-placement="top" class="console-field-grid cols-2">
@@ -3436,7 +3449,9 @@ onBeforeUnmount(() => {
               <NFormItem label="显示数量">
                 <div class="console-inline-control">
                   <NInputNumber v-model:value="commandLimit" :min="10" :max="100" :show-button="false" class="w-full" />
-                  <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新日志" @click="refreshAll()">↻</NButton>
+                  <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新日志" @click="refreshAll()">
+                    <ConsoleRefreshIcon />
+                  </NButton>
                 </div>
               </NFormItem>
             </NForm>
@@ -3761,7 +3776,9 @@ onBeforeUnmount(() => {
               >
                 强制终止
               </NButton>
-              <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新日志" @click="refreshLogModal()">↻</NButton>
+              <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新日志" @click="refreshLogModal()">
+                <ConsoleRefreshIcon />
+              </NButton>
             </div>
           </div>
 

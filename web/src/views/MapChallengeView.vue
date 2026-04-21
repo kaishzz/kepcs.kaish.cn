@@ -5,6 +5,7 @@ import { NButton, NCard, NDataTable, NPagination, NSelect, NSpin } from 'naive-u
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AppShell from '../components/AppShell.vue'
+import ConsoleRefreshIcon from '../components/console/ConsoleRefreshIcon.vue'
 import { http } from '../lib/api'
 import { buildNavItems } from '../lib/navigation'
 import { capturePageSurfaceScroll, restorePageSurfaceScroll } from '../lib/pageSurface'
@@ -414,7 +415,7 @@ onBeforeUnmount(() => {
                 :loading="refreshing"
                 @click="loadLeaderboard"
               >
-                ↻
+                <ConsoleRefreshIcon />
               </NButton>
             </div>
           </div>

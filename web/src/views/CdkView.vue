@@ -41,6 +41,7 @@ import AccessControlPanel from '../components/console/AccessControlPanel.vue'
 import AgentControlPanel from '../components/console/AgentControlPanel.vue'
 import ConsoleMetricStrip from '../components/console/ConsoleMetricStrip.vue'
 import ConsolePanelCard from '../components/console/ConsolePanelCard.vue'
+import ConsoleRefreshIcon from '../components/console/ConsoleRefreshIcon.vue'
 import ConsoleSectionBlock from '../components/console/ConsoleSectionBlock.vue'
 import ConsoleSegmentedTabs from '../components/console/ConsoleSegmentedTabs.vue'
 import ServerCatalogPanel from '../components/console/ServerCatalogPanel.vue'
@@ -211,6 +212,7 @@ const logFilters = ref({
   actorRole: null as 'root' | 'staff' | 'admin' | 'user' | null,
   action: '',
   targetType: '',
+  includeSystem: false,
 })
 
 const orderLogFilters = ref({
@@ -934,27 +936,6 @@ function stringifyStructuredValue(value: unknown) {
   }
 }
 
-function summarizeStructuredValue(value: unknown, maxLength = 72) {
-  const text = stringifyStructuredValue(value).replace(/\s+/g, ' ').trim()
-  if (text === '-') {
-    return text
-  }
-
-  if (text.length <= maxLength) {
-    return text
-  }
-
-  return `${text.slice(0, Math.max(0, maxLength - 3))}...`
-}
-
-function buildAuditLogPreview(row: AuditLogItem) {
-  return summarizeStructuredValue(row.detail || row.targetId || row.action)
-}
-
-function buildOrderLogPreview(row: OrderItem) {
-  return summarizeStructuredValue(row.remark || row.payInfo || row.providerOrderId || row.subject)
-}
-
 function renderLogDetailBlock(label: string, value: unknown) {
   const text = stringifyStructuredValue(value)
   if (text === '-') {
@@ -1227,6 +1208,7 @@ async function loadLogs(silent = false) {
         actorRole: logFilters.value.actorRole || undefined,
         action: logFilters.value.action.trim() || undefined,
         targetType: logFilters.value.targetType.trim() || undefined,
+        includeSystem: logFilters.value.includeSystem || undefined,
       },
     })
     logs.value = data.logs || []
@@ -2209,17 +2191,16 @@ const logColumns = computed<DataTableColumns<AuditLogItem>>(() => {
 
   return [
     { type: 'expand', renderExpand: renderAuditLogExpand },
-    { title: '时间', key: 'createdAt', render: (row) => formatDate(row.createdAt) },
-    { title: '操作者', key: 'actorSteamId', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.actorSteamId, '操作者 SteamID64') },
+    { title: '时间', key: 'createdAt', width: 176, render: (row) => formatDate(row.createdAt) },
+    { title: '操作者', key: 'actorSteamId', minWidth: 180, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.actorSteamId, '操作者 SteamID64') },
     {
       title: '身份',
       key: 'actorRole',
+      width: 124,
       render: (row) => h(NTag, { round: false, type: roleTagType(row.actorRole) }, { default: () => auditActorRoleText(row.actorRole) }),
     },
-    { title: '动作', key: 'action', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.action, '动作') },
-    { title: '目标类型', key: 'targetType' },
-    { title: '目标', key: 'targetId', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.targetId, '目标') },
-    { title: '内容预览', key: 'detailPreview', ellipsis: { tooltip: true }, render: (row) => buildAuditLogPreview(row) },
+    { title: '动作', key: 'action', minWidth: 220, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.action, '动作') },
+    { title: '目标类型', key: 'targetType', minWidth: 160, ellipsis: { tooltip: true } },
   ]
 })
 
@@ -2239,21 +2220,20 @@ const orderLogColumns = computed<DataTableColumns<OrderItem>>(() => {
 
   return [
     { type: 'expand', renderExpand: renderOrderLogExpand },
-    { title: '时间', key: 'createdAt', render: (row) => formatDate(row.createdAt) },
-    { title: '订单号', key: 'orderNo', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.orderNo, '订单号') },
-    { title: '商品', key: 'subject', ellipsis: { tooltip: true }, render: (row) => row.subject || payProductTypeLabel(row.productType) },
+    { title: '时间', key: 'createdAt', width: 176, render: (row) => formatDate(row.createdAt) },
+    { title: '订单号', key: 'orderNo', minWidth: 280, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.orderNo, '订单号') },
+    { title: '商品', key: 'subject', minWidth: 220, ellipsis: { tooltip: true }, render: (row) => row.subject || payProductTypeLabel(row.productType) },
     {
       title: '商品类型',
       key: 'productType',
+      width: 140,
       render: (row) => payProductTypeLabel(row.productType),
     },
-    { title: 'SteamID64', key: 'steamId64', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.steamId64, 'SteamID64') },
-    { title: 'Email', key: 'email', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.email, 'Email') },
-    { title: '金额', key: 'amountFen', render: (row) => formatAmountYuan(row.amountFen) },
-    { title: '内容预览', key: 'detailPreview', ellipsis: { tooltip: true }, render: (row) => buildOrderLogPreview(row) },
+    { title: '金额', key: 'amountFen', width: 116, render: (row) => formatAmountYuan(row.amountFen) },
     {
       title: '状态',
       key: 'status',
+      width: 118,
       render: (row) => h(NTag, { round: false, type: orderStatusTagType(row.status) }, { default: () => row.status }),
     },
   ]
@@ -2388,6 +2368,7 @@ watch(() => [
   logFilters.value.actorRole,
   logFilters.value.action,
   logFilters.value.targetType,
+  logFilters.value.includeSystem,
 ], () => {
   if (!canViewLogs.value) return
   if (logFilterTimer) clearTimeout(logFilterTimer)
@@ -2682,7 +2663,9 @@ onBeforeUnmount(() => {
                     </NFormItem>
                     <NFormItem label="操作">
                       <div class="console-inline-control">
-                        <NButton secondary class="console-action-icon" title="刷新列表" @click="() => loadMyCdks()">↻</NButton>
+                        <NButton secondary class="console-action-icon" title="刷新列表" @click="() => loadMyCdks()">
+                          <ConsoleRefreshIcon />
+                        </NButton>
                       </div>
                     </NFormItem>
                   </NForm>
@@ -2863,7 +2846,9 @@ onBeforeUnmount(() => {
                             </NFormItem>
                             <NFormItem label="操作">
                               <div class="console-inline-control">
-                                <NButton secondary class="console-action-icon" title="刷新列表" @click="() => loadManagedCdks()">↻</NButton>
+                                <NButton secondary class="console-action-icon" title="刷新列表" @click="() => loadManagedCdks()">
+                                  <ConsoleRefreshIcon />
+                                </NButton>
                               </div>
                             </NFormItem>
                           </NForm>
@@ -3030,7 +3015,7 @@ onBeforeUnmount(() => {
                     description="统一查看后台操作流水，并按操作者、身份、动作和目标类型筛选。"
                   >
                     <ConsoleSectionBlock title="筛选条件">
-                      <NForm label-placement="top" class="console-field-grid cols-4 console-form-grid">
+                      <NForm label-placement="top" class="console-field-grid cols-5 console-form-grid">
                         <NFormItem label="操作者 SteamID64">
                           <NInput v-model:value="logFilters.actorSteamId" />
                         </NFormItem>
@@ -3042,6 +3027,11 @@ onBeforeUnmount(() => {
                         </NFormItem>
                         <NFormItem label="目标类型">
                           <NInput v-model:value="logFilters.targetType" />
+                        </NFormItem>
+                        <NFormItem label="system 日志">
+                          <NCheckbox v-model:checked="logFilters.includeSystem">
+                            显示操作者为 system 的记录
+                          </NCheckbox>
                         </NFormItem>
                       </NForm>
                     </ConsoleSectionBlock>
@@ -3068,7 +3058,9 @@ onBeforeUnmount(() => {
                             <div class="fold-card__title">
                               <strong>{{ row.action }}</strong>
                               <span>{{ formatMobileDateTime(row.createdAt) }}</span>
-                              <span class="console-log-preview">{{ buildAuditLogPreview(row) }}</span>
+                              <span class="console-log-preview">
+                                {{ row.actorSteamId }} · {{ auditActorRoleText(row.actorRole) }} · {{ row.targetType || '-' }}
+                              </span>
                             </div>
                             <span class="fold-card__arrow" :class="{ 'is-open': isAuditLogExpanded(row.id) }">⌄</span>
                           </button>
@@ -3142,12 +3134,13 @@ onBeforeUnmount(() => {
                         </NFormItem>
                       </NForm>
                     </ConsoleSectionBlock>
-                    <div v-if="!isMobileView" class="table-shell table-shell--stable table-shell--log-stable table-shell--page-12">
+                    <div v-if="!isMobileView" class="table-shell table-shell--stable table-shell--log-stable table-shell--page-12 table-shell--order-log">
                       <NDataTable
                         :columns="orderLogColumns"
                         :data="orderLogPagination.pagedRows.value"
                         :loading="orderLogLoading"
                         :bordered="false"
+                        :scroll-x="1050"
                       />
                     </div>
                     <div v-else class="mobile-record-list">
@@ -3164,8 +3157,8 @@ onBeforeUnmount(() => {
                           <button type="button" class="fold-card__trigger" @click="toggleOrderLogExpanded(row.orderNo)">
                             <div class="fold-card__title">
                               <strong>{{ row.subject || payProductTypeLabel(row.productType) }}</strong>
+                              <span class="console-log-preview">{{ row.orderNo }}</span>
                               <span>{{ formatAmountYuan(row.amountFen) }} · {{ formatMobileDateTime(row.createdAt) }}</span>
-                              <span class="console-log-preview">{{ buildOrderLogPreview(row) }}</span>
                             </div>
                             <div class="fold-card__meta">
                               <NTag :type="orderStatusTagType(row.status)" :round="false">{{ row.status }}</NTag>
@@ -3288,7 +3281,9 @@ onBeforeUnmount(() => {
                       </NFormItem>
                       <NFormItem label="操作">
                         <div class="console-inline-control">
-                          <NButton secondary class="console-action-icon" title="刷新列表" @click="loadMapChallenges">↻</NButton>
+                          <NButton secondary class="console-action-icon" title="刷新列表" @click="loadMapChallenges">
+                            <ConsoleRefreshIcon />
+                          </NButton>
                         </div>
                       </NFormItem>
                     </NForm>

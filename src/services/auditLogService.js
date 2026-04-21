@@ -32,10 +32,16 @@ async function listAuditLogs({
   actorRole,
   action,
   targetType,
+  includeSystem = false,
 } = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 200);
   const conditions = [];
   const values = [];
+
+  if (!includeSystem) {
+    conditions.push("actorSteamId <> ?");
+    values.push("system");
+  }
 
   if (actorSteamId) {
     conditions.push("actorSteamId = ?");

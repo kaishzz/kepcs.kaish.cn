@@ -355,6 +355,25 @@ const logQuerySchema = z.object({
   actorRole: z.string().trim().max(32).optional().transform((value) => value || undefined),
   action: z.string().trim().max(64).optional().transform((value) => value || undefined),
   targetType: z.string().trim().max(32).optional().transform((value) => value || undefined),
+  includeSystem: z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+
+      if (normalized === "true" || normalized === "1") {
+        return true;
+      }
+
+      if (normalized === "false" || normalized === "0") {
+        return false;
+      }
+    }
+
+    return value;
+  }, z.boolean().optional().default(false)),
 });
 
 const adminOrderQuerySchema = z.object({

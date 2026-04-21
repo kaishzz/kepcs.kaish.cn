@@ -21,6 +21,7 @@ import { http } from '../../lib/api'
 import { pushToast } from '../../lib/toast'
 import ConsoleMetricStrip from './ConsoleMetricStrip.vue'
 import ConsolePanelCard from './ConsolePanelCard.vue'
+import ConsoleRefreshIcon from './ConsoleRefreshIcon.vue'
 import ConsoleSectionBlock from './ConsoleSectionBlock.vue'
 import type {
   IdleRestartMonitorConfig,
@@ -436,7 +437,9 @@ watch(
   >
     <template #header-extra>
       <div class="catalog-header-extra">
-        <NButton secondary class="console-action-icon" title="刷新列表" @click="loadPanel">↻</NButton>
+              <NButton secondary class="console-action-icon" title="刷新列表" @click="loadPanel">
+                <ConsoleRefreshIcon />
+              </NButton>
       </div>
     </template>
 
