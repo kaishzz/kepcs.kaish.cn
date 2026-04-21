@@ -33,6 +33,10 @@ function toIsoString(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function escapeLikeFragment(value) {
+  return String(value || "").replace(/[\\%_]/g, "\\$&");
+}
+
 function normalizePlayerRow(row) {
   if (!row) {
     return null;
@@ -92,25 +96,52 @@ async function listPlayerChallengeRecords({ steamId, databaseName = env.official
   return rows.map(normalizeChallengeRow).filter(Boolean);
 }
 
-async function findPlayerProfile({ userId, steamId, databaseName = env.officialWhitelistDatabase }) {
+async function findPlayerProfile({ userId, steamId, name, databaseName = env.officialWhitelistDatabase }) {
   const pool = getPool(databaseName);
   const todayDate = toShanghaiDateString();
   const whereClauses = [];
   const params = [todayDate];
+  const orderByClauses = [];
+  const orderByParams = [];
+  const safeName = String(name || "").trim();
+  const safeNameLower = safeName.toLowerCase();
+  const safeNameLike = safeName ? `%${escapeLikeFragment(safeNameLower)}%` : "";
+  const safeNamePrefix = safeName ? `${escapeLikeFragment(safeNameLower)}%` : "";
 
   if (userId != null) {
     whereClauses.push("p.UserID = ?");
     params.push(Number(userId));
+    orderByClauses.push("CASE WHEN p.UserID = ? THEN 0 ELSE 1 END");
+    orderByParams.push(Number(userId));
   }
 
   if (steamId) {
     whereClauses.push("p.SteamID = ?");
     params.push(String(steamId));
+    orderByClauses.push("CASE WHEN p.SteamID = ? THEN 0 ELSE 1 END");
+    orderByParams.push(String(steamId));
+  }
+
+  if (safeName) {
+    whereClauses.push("LOWER(TRIM(p.Name)) LIKE ? ESCAPE '\\\\'");
+    params.push(safeNameLike);
+    orderByClauses.push(`
+      CASE
+        WHEN LOWER(TRIM(p.Name)) = ? THEN 0
+        WHEN LOWER(TRIM(p.Name)) LIKE ? ESCAPE '\\\\' THEN 1
+        ELSE 2
+      END
+    `);
+    orderByParams.push(safeNameLower, safeNamePrefix);
   }
 
   if (!whereClauses.length) {
     return null;
   }
+
+  const orderBySql = orderByClauses.length
+    ? `ORDER BY ${orderByClauses.join(", ")}, p.LastSeen DESC, p.UserID DESC`
+    : "ORDER BY p.LastSeen DESC, p.UserID DESC";
 
   const [rows] = await pool.execute(
     `
@@ -129,9 +160,10 @@ async function findPlayerProfile({ userId, steamId, databaseName = env.officialW
         ON d.SteamID = p.SteamID
        AND d.PlayDate = ?
       WHERE ${whereClauses.join(" OR ")}
+      ${orderBySql}
       LIMIT 1
     `,
-    params,
+    [...params, ...orderByParams],
   );
 
   const player = normalizePlayerRow(rows[0] || null);

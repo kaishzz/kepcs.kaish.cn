@@ -11,6 +11,7 @@ import {
   NButton,
   NCard,
   NCheckbox,
+  NCollapseTransition,
   NDataTable,
   NDatePicker,
   NDropdown,
@@ -125,6 +126,8 @@ const mapChallenges = ref<MapChallengeRecordItem[]>([])
 const checkedRowKeys = ref<DataTableRowKey[]>([])
 const myExpandedRowKeys = ref<DataTableRowKey[]>([])
 const manageExpandedRowKeys = ref<DataTableRowKey[]>([])
+const expandedAuditLogIds = ref<string[]>([])
+const expandedOrderLogIds = ref<string[]>([])
 const whitelistOptions = ref<Array<{ label: string, value: string }>>([])
 
 function createConsoleLoadState(): Record<ConsoleLoadKey, boolean> {
@@ -321,6 +324,7 @@ let manageFilterTimer: ReturnType<typeof setTimeout> | null = null
 let logFilterTimer: ReturnType<typeof setTimeout> | null = null
 let orderLogFilterTimer: ReturnType<typeof setTimeout> | null = null
 let mapChallengeFilterTimer: ReturnType<typeof setTimeout> | null = null
+let overviewRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 const navItems = computed(() => buildNavItems(CONSOLE_PAGE_PATH))
 const permissionSet = computed(() => new Set(auth.user?.permissions || []))
@@ -910,6 +914,104 @@ function buildOrderLogEntries(row: OrderItem) {
   ]
 }
 
+function stringifyStructuredValue(value: unknown) {
+  if (value == null) {
+    return '-'
+  }
+
+  if (typeof value === 'string') {
+    const safeValue = value.trim()
+    return safeValue || '-'
+  }
+
+  try {
+    const text = JSON.stringify(value, null, 2)
+    return text && text !== 'null' ? text : '-'
+  } catch {
+    const safeValue = String(value || '').trim()
+    return safeValue || '-'
+  }
+}
+
+function summarizeStructuredValue(value: unknown, maxLength = 72) {
+  const text = stringifyStructuredValue(value).replace(/\s+/g, ' ').trim()
+  if (text === '-') {
+    return text
+  }
+
+  if (text.length <= maxLength) {
+    return text
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`
+}
+
+function buildAuditLogPreview(row: AuditLogItem) {
+  return summarizeStructuredValue(row.detail || row.targetId || row.action)
+}
+
+function buildOrderLogPreview(row: OrderItem) {
+  return summarizeStructuredValue(row.remark || row.payInfo || row.providerOrderId || row.subject)
+}
+
+function renderLogDetailBlock(label: string, value: unknown) {
+  const text = stringifyStructuredValue(value)
+  if (text === '-') {
+    return null
+  }
+
+  return h('div', { class: 'console-log-detail-block' }, [
+    h('div', { class: 'console-log-detail-block__label' }, label),
+    h('pre', { class: 'console-log-detail-block__content' }, text),
+  ])
+}
+
+function renderAuditLogExpand(row: AuditLogItem) {
+  const children = [
+    renderDetailGrid([
+      { label: '动作', value: row.action },
+      { label: '时间', value: formatDate(row.createdAt) },
+      ...buildAuditLogEntries(row),
+    ]),
+  ]
+  const detailBlock = renderLogDetailBlock('详细内容', row.detail)
+
+  if (detailBlock) {
+    children.push(detailBlock)
+  }
+
+  return h('div', { class: 'cdk-expand-panel console-log-expand' }, children)
+}
+
+function renderOrderLogExpand(row: OrderItem) {
+  const children = [
+    renderDetailGrid([
+      { label: '商品', value: row.subject || payProductTypeLabel(row.productType) },
+      { label: '状态', value: row.status },
+      { label: '支付方式', value: row.paymentType },
+      { label: '金额', value: formatAmountYuan(row.amountFen) },
+      { label: '创建时间', value: formatDate(row.createdAt) },
+      { label: '支付时间', value: formatDate(row.paidAt) },
+      ...buildOrderLogEntries(row),
+    ]),
+  ]
+
+  ;([
+    ['备注', row.remark],
+    ['第三方订单号', row.providerOrderId],
+    ['支付信息', row.payInfo],
+    ['支付链接', row.paymentUrl],
+    ['二维码', row.qrCode],
+  ] as Array<[string, unknown]>).forEach(([label, value]) => {
+    const block = renderLogDetailBlock(label, value)
+    if (block) {
+      children.push(block)
+    }
+  })
+
+  return h('div', { class: 'cdk-expand-panel console-log-expand' }, children)
+}
+
 function buildProductEntries(row: CdkProductItem) {
   return [
     { label: '商品编码', value: row.code },
@@ -1007,6 +1109,28 @@ function renderCopyButton(value: string | null | undefined, label: string) {
   )
 }
 
+function toggleExpandedLogRow(target: typeof expandedAuditLogIds, id: string) {
+  target.value = target.value.includes(id)
+    ? target.value.filter((item) => item !== id)
+    : [...target.value, id]
+}
+
+function isAuditLogExpanded(id: string) {
+  return expandedAuditLogIds.value.includes(id)
+}
+
+function toggleAuditLogExpanded(id: string) {
+  toggleExpandedLogRow(expandedAuditLogIds, id)
+}
+
+function isOrderLogExpanded(orderNo: string) {
+  return expandedOrderLogIds.value.includes(orderNo)
+}
+
+function toggleOrderLogExpanded(orderNo: string) {
+  toggleExpandedLogRow(expandedOrderLogIds, orderNo)
+}
+
 function syncViewport() {
   if (typeof window === 'undefined') {
     return
@@ -1032,25 +1156,37 @@ async function fetchMe() {
   }
 }
 
-async function loadMyCdks() {
+async function loadMyCdks(silent = false) {
   if (!auth.user) return
-  myLoading.value = true
+
+  if (!silent) {
+    myLoading.value = true
+  }
 
   try {
     const { data } = await http.get('/console/api/cdks/me', { params: myFilters.value })
     myCdks.value = data.cdks || []
-    myCdkPagination.reset()
+    if (!silent) {
+      myCdkPagination.reset()
+    }
     consoleLoadState.value['my-cdks'] = true
   } catch (error) {
-    pushToast((error as Error).message, 'error')
+    if (!silent) {
+      pushToast((error as Error).message, 'error')
+    }
   } finally {
-    myLoading.value = false
+    if (!silent) {
+      myLoading.value = false
+    }
   }
 }
 
-async function loadManagedCdks() {
+async function loadManagedCdks(silent = false) {
   if (!canManageCdksBatch.value) return
-  manageLoading.value = true
+
+  if (!silent) {
+    manageLoading.value = true
+  }
 
   try {
     const { data } = await http.get('/console/api/cdks/manage', {
@@ -1060,18 +1196,27 @@ async function loadManagedCdks() {
       },
     })
     managedCdks.value = data.cdks || []
-    managedCdkPagination.reset()
+    if (!silent) {
+      managedCdkPagination.reset()
+    }
     consoleLoadState.value['manage-cdks'] = true
   } catch (error) {
-    pushToast((error as Error).message, 'error')
+    if (!silent) {
+      pushToast((error as Error).message, 'error')
+    }
   } finally {
-    manageLoading.value = false
+    if (!silent) {
+      manageLoading.value = false
+    }
   }
 }
 
-async function loadLogs() {
+async function loadLogs(silent = false) {
   if (!canViewAuditLogs.value) return
-  logLoading.value = true
+
+  if (!silent) {
+    logLoading.value = true
+  }
 
   try {
     const { data } = await http.get('/console/api/logs', {
@@ -1084,18 +1229,27 @@ async function loadLogs() {
       },
     })
     logs.value = data.logs || []
-    logPagination.reset()
+    if (!silent) {
+      logPagination.reset()
+    }
     consoleLoadState.value['logs-audit'] = true
   } catch (error) {
-    pushToast((error as Error).message, 'error')
+    if (!silent) {
+      pushToast((error as Error).message, 'error')
+    }
   } finally {
-    logLoading.value = false
+    if (!silent) {
+      logLoading.value = false
+    }
   }
 }
 
-async function loadOrderLogs() {
+async function loadOrderLogs(silent = false) {
   if (!canViewOrderLogs.value) return
-  orderLogLoading.value = true
+
+  if (!silent) {
+    orderLogLoading.value = true
+  }
 
   try {
     const { data } = await http.get('/console/api/orders', {
@@ -1109,12 +1263,18 @@ async function loadOrderLogs() {
       },
     })
     orderLogs.value = data.orders || []
-    orderLogPagination.reset()
+    if (!silent) {
+      orderLogPagination.reset()
+    }
     consoleLoadState.value['logs-orders'] = true
   } catch (error) {
-    pushToast((error as Error).message, 'error')
+    if (!silent) {
+      pushToast((error as Error).message, 'error')
+    }
   } finally {
-    orderLogLoading.value = false
+    if (!silent) {
+      orderLogLoading.value = false
+    }
   }
 }
 
@@ -1122,39 +1282,54 @@ async function loadAdmins() {
   consoleLoadState.value.admins = true
 }
 
-async function loadProducts() {
+async function loadProducts(silent = false) {
   if (!canViewProductList.value) return
-  productLoading.value = true
+
+  if (!silent) {
+    productLoading.value = true
+  }
 
   try {
     const { data } = await http.get('/console/api/products/manage')
     products.value = data.products || []
-    productPagination.reset()
+    if (!silent) {
+      productPagination.reset()
+    }
     consoleLoadState.value.products = true
   } catch (error) {
-    pushToast((error as Error).message, 'error')
+    if (!silent) {
+      pushToast((error as Error).message, 'error')
+    }
   } finally {
-    productLoading.value = false
+    if (!silent) {
+      productLoading.value = false
+    }
   }
 }
 
-async function loadOverviewNodes() {
+async function loadOverviewNodes(silent = false) {
   if (!canViewNodeOverview.value) {
     overviewNodes.value = []
     nodeOverviewLoaded.value = false
     return
   }
 
-  nodeOverviewLoading.value = true
+  if (!silent) {
+    nodeOverviewLoading.value = true
+  }
 
   try {
     const { data } = await http.get(`${CONSOLE_API_BASE}/agent/nodes`)
     overviewNodes.value = data.nodes || []
     nodeOverviewLoaded.value = true
   } catch (error) {
-    pushToast((error as Error).message, 'error')
+    if (!silent) {
+      pushToast((error as Error).message, 'error')
+    }
   } finally {
-    nodeOverviewLoading.value = false
+    if (!silent) {
+      nodeOverviewLoading.value = false
+    }
   }
 }
 
@@ -1298,7 +1473,7 @@ function saveMapChallengeRecord() {
   })
 }
 
-async function ensureConsoleOverviewLoaded(force = false) {
+async function ensureConsoleOverviewLoaded(force = false, silent = false) {
   if (!auth.user) {
     return
   }
@@ -1307,19 +1482,19 @@ async function ensureConsoleOverviewLoaded(force = false) {
 
   if (canManageCdksBatch.value) {
     if (force || !consoleLoadState.value['manage-cdks']) {
-      tasks.push(loadManagedCdks())
+      tasks.push(loadManagedCdks(silent))
     }
   }
   else if (force || !consoleLoadState.value['my-cdks']) {
-    tasks.push(loadMyCdks())
+    tasks.push(loadMyCdks(silent))
   }
 
   if (canViewProductList.value && (force || !consoleLoadState.value.products)) {
-    tasks.push(loadProducts())
+    tasks.push(loadProducts(silent))
   }
 
   if (canViewNodeOverview.value && (force || !nodeOverviewLoaded.value)) {
-    tasks.push(loadOverviewNodes())
+    tasks.push(loadOverviewNodes(silent))
   }
 
   if (tasks.length) {
@@ -1407,6 +1582,25 @@ async function refreshCurrentConsoleData() {
 
   await ensureConsoleOverviewLoaded(true)
   await ensureActiveTabLoaded(activeTab.value as ConsoleTab, true)
+}
+
+function startOverviewRefresh() {
+  stopOverviewRefresh()
+
+  overviewRefreshTimer = window.setInterval(() => {
+    if (!auth.user) {
+      return
+    }
+
+    void ensureConsoleOverviewLoaded(true, true)
+  }, 1000)
+}
+
+function stopOverviewRefresh() {
+  if (overviewRefreshTimer) {
+    window.clearInterval(overviewRefreshTimer)
+    overviewRefreshTimer = null
+  }
 }
 
 function renderConfirmContent(lines: string[]) {
@@ -2009,6 +2203,7 @@ const logColumns = computed<DataTableColumns<AuditLogItem>>(() => {
   }
 
   return [
+    { type: 'expand', renderExpand: renderAuditLogExpand },
     { title: '时间', key: 'createdAt', render: (row) => formatDate(row.createdAt) },
     { title: '操作者', key: 'actorSteamId', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.actorSteamId, '操作者 SteamID64') },
     {
@@ -2019,6 +2214,7 @@ const logColumns = computed<DataTableColumns<AuditLogItem>>(() => {
     { title: '动作', key: 'action', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.action, '动作') },
     { title: '目标类型', key: 'targetType' },
     { title: '目标', key: 'targetId', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.targetId, '目标') },
+    { title: '内容预览', key: 'detailPreview', ellipsis: { tooltip: true }, render: (row) => buildAuditLogPreview(row) },
   ]
 })
 
@@ -2037,6 +2233,7 @@ const orderLogColumns = computed<DataTableColumns<OrderItem>>(() => {
   }
 
   return [
+    { type: 'expand', renderExpand: renderOrderLogExpand },
     { title: '时间', key: 'createdAt', render: (row) => formatDate(row.createdAt) },
     { title: '订单号', key: 'orderNo', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.orderNo, '订单号') },
     { title: '商品', key: 'subject', ellipsis: { tooltip: true }, render: (row) => row.subject || payProductTypeLabel(row.productType) },
@@ -2048,6 +2245,7 @@ const orderLogColumns = computed<DataTableColumns<OrderItem>>(() => {
     { title: 'SteamID64', key: 'steamId64', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.steamId64, 'SteamID64') },
     { title: 'Email', key: 'email', ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.email, 'Email') },
     { title: '金额', key: 'amountFen', render: (row) => formatAmountYuan(row.amountFen) },
+    { title: '内容预览', key: 'detailPreview', ellipsis: { tooltip: true }, render: (row) => buildOrderLogPreview(row) },
     {
       title: '状态',
       key: 'status',
@@ -2208,6 +2406,22 @@ watch(() => [
   }, 320)
 })
 
+watch(
+  () => logPagination.pagedRows.value.map((row) => row.id),
+  (visibleIds) => {
+    expandedAuditLogIds.value = expandedAuditLogIds.value.filter((id) => visibleIds.includes(id))
+  },
+  { immediate: true },
+)
+
+watch(
+  () => orderLogPagination.pagedRows.value.map((row) => row.orderNo),
+  (visibleIds) => {
+    expandedOrderLogIds.value = expandedOrderLogIds.value.filter((id) => visibleIds.includes(id))
+  },
+  { immediate: true },
+)
+
 watch(() => [
   mapChallengeFilters.value.limit,
   mapChallengeFilters.value.steamId64,
@@ -2314,6 +2528,7 @@ onMounted(async () => {
   }
 
   await fetchMe()
+  startOverviewRefresh()
 })
 
 onBeforeUnmount(() => {
@@ -2343,6 +2558,8 @@ onBeforeUnmount(() => {
     clearTimeout(mapChallengeFilterTimer)
     mapChallengeFilterTimer = null
   }
+
+  stopOverviewRefresh()
 })
 </script>
 
@@ -2460,7 +2677,7 @@ onBeforeUnmount(() => {
                     </NFormItem>
                     <NFormItem label="操作">
                       <div class="console-inline-control">
-                        <NButton secondary class="console-action-icon" title="刷新列表" @click="loadMyCdks">↻</NButton>
+                        <NButton secondary class="console-action-icon" title="刷新列表" @click="() => loadMyCdks()">↻</NButton>
                       </div>
                     </NFormItem>
                   </NForm>
@@ -2641,7 +2858,7 @@ onBeforeUnmount(() => {
                             </NFormItem>
                             <NFormItem label="操作">
                               <div class="console-inline-control">
-                                <NButton secondary class="console-action-icon" title="刷新列表" @click="loadManagedCdks">↻</NButton>
+                                <NButton secondary class="console-action-icon" title="刷新列表" @click="() => loadManagedCdks()">↻</NButton>
                               </div>
                             </NFormItem>
                           </NForm>
@@ -2839,32 +3056,45 @@ onBeforeUnmount(() => {
                         <article
                           v-for="row in logPagination.pagedRows.value"
                           :key="row.id"
-                          class="mobile-info-card"
+                          class="fold-card mobile-info-card"
+                          :class="{ 'fold-card--expanded': isAuditLogExpanded(row.id) }"
                         >
-                          <div class="mobile-info-card__top">
-                            <strong>{{ row.action }}</strong>
-                            <span>{{ formatMobileDateTime(row.createdAt) }}</span>
-                          </div>
-                          <div class="mobile-info-card__grid">
-                            <div class="mobile-info-card__item">
-                              <span>操作者</span>
-                              <button type="button" class="log-copy-button" @click="copyText(row.actorSteamId, '操作者 SteamID64')">
-                                {{ row.actorSteamId }}
-                              </button>
+                          <button type="button" class="fold-card__trigger" @click="toggleAuditLogExpanded(row.id)">
+                            <div class="fold-card__title">
+                              <strong>{{ row.action }}</strong>
+                              <span>{{ formatMobileDateTime(row.createdAt) }}</span>
+                              <span class="console-log-preview">{{ buildAuditLogPreview(row) }}</span>
                             </div>
-                            <div class="mobile-info-card__item">
-                              <span>身份</span>
-                              <strong>{{ auditActorRoleText(row.actorRole) }}</strong>
+                            <span class="fold-card__arrow" :class="{ 'is-open': isAuditLogExpanded(row.id) }">⌄</span>
+                          </button>
+                          <NCollapseTransition :show="isAuditLogExpanded(row.id)">
+                            <div class="fold-card__body">
+                              <div class="mobile-info-card__grid">
+                                <div class="mobile-info-card__item">
+                                  <span>操作者</span>
+                                  <button type="button" class="log-copy-button" @click="copyText(row.actorSteamId, '操作者 SteamID64')">
+                                    {{ row.actorSteamId }}
+                                  </button>
+                                </div>
+                                <div class="mobile-info-card__item">
+                                  <span>身份</span>
+                                  <strong>{{ auditActorRoleText(row.actorRole) }}</strong>
+                                </div>
+                                <div
+                                  v-for="entry in buildAuditLogEntries(row).slice(2)"
+                                  :key="`${row.id}-${entry.label}`"
+                                  class="mobile-info-card__item"
+                                >
+                                  <span>{{ entry.label }}</span>
+                                  <strong>{{ entry.value }}</strong>
+                                </div>
+                              </div>
+                              <div v-if="stringifyStructuredValue(row.detail) !== '-'" class="console-log-detail-block">
+                                <div class="console-log-detail-block__label">详细内容</div>
+                                <pre class="console-log-detail-block__content">{{ stringifyStructuredValue(row.detail) }}</pre>
+                              </div>
                             </div>
-                            <div
-                              v-for="entry in buildAuditLogEntries(row).slice(2)"
-                              :key="`${row.id}-${entry.label}`"
-                              class="mobile-info-card__item"
-                            >
-                              <span>{{ entry.label }}</span>
-                              <strong>{{ entry.value }}</strong>
-                            </div>
-                          </div>
+                          </NCollapseTransition>
                         </article>
                       </div>
                       <div v-else class="hero-note min-h-[220px]">
@@ -2923,31 +3153,54 @@ onBeforeUnmount(() => {
                         <article
                           v-for="row in orderLogPagination.pagedRows.value"
                           :key="row.orderNo"
-                          class="mobile-info-card"
+                          class="fold-card mobile-info-card"
+                          :class="{ 'fold-card--expanded': isOrderLogExpanded(row.orderNo) }"
                         >
-                          <div class="mobile-info-card__top">
-                            <strong>{{ row.subject || payProductTypeLabel(row.productType) }}</strong>
-                            <NTag :type="orderStatusTagType(row.status)" :round="false">{{ row.status }}</NTag>
-                          </div>
-                          <div class="mobile-info-card__subline">
-                            <span>{{ formatAmountYuan(row.amountFen) }}</span>
-                            <span>{{ formatMobileDateTime(row.createdAt) }}</span>
-                          </div>
-                          <div class="mobile-info-card__grid">
-                            <div
-                              v-for="entry in buildOrderLogEntries(row)"
-                              :key="`${row.orderNo}-${entry.label}`"
-                              class="mobile-info-card__item"
-                            >
-                              <span>{{ entry.label }}</span>
-                              <template v-if="entry.label === '订单号' || entry.label === 'SteamID64' || entry.label === 'Email'">
-                                <button type="button" class="log-copy-button" @click="copyText(entry.value, entry.label)">
-                                  {{ entry.value }}
-                                </button>
-                              </template>
-                              <strong v-else>{{ entry.value }}</strong>
+                          <button type="button" class="fold-card__trigger" @click="toggleOrderLogExpanded(row.orderNo)">
+                            <div class="fold-card__title">
+                              <strong>{{ row.subject || payProductTypeLabel(row.productType) }}</strong>
+                              <span>{{ formatAmountYuan(row.amountFen) }} · {{ formatMobileDateTime(row.createdAt) }}</span>
+                              <span class="console-log-preview">{{ buildOrderLogPreview(row) }}</span>
                             </div>
-                          </div>
+                            <div class="fold-card__meta">
+                              <NTag :type="orderStatusTagType(row.status)" :round="false">{{ row.status }}</NTag>
+                              <span class="fold-card__arrow" :class="{ 'is-open': isOrderLogExpanded(row.orderNo) }">⌄</span>
+                            </div>
+                          </button>
+                          <NCollapseTransition :show="isOrderLogExpanded(row.orderNo)">
+                            <div class="fold-card__body">
+                              <div class="mobile-info-card__grid">
+                                <div
+                                  v-for="entry in buildOrderLogEntries(row)"
+                                  :key="`${row.orderNo}-${entry.label}`"
+                                  class="mobile-info-card__item"
+                                >
+                                  <span>{{ entry.label }}</span>
+                                  <template v-if="entry.label === '订单号' || entry.label === 'SteamID64' || entry.label === 'Email'">
+                                    <button type="button" class="log-copy-button" @click="copyText(entry.value, entry.label)">
+                                      {{ entry.value }}
+                                    </button>
+                                  </template>
+                                  <strong v-else>{{ entry.value }}</strong>
+                                </div>
+                              </div>
+                              <div
+                                v-for="[label, value] in [
+                                  ['备注', row.remark],
+                                  ['第三方订单号', row.providerOrderId],
+                                  ['支付信息', row.payInfo],
+                                  ['支付链接', row.paymentUrl],
+                                  ['二维码', row.qrCode],
+                                ]"
+                                :key="`${row.orderNo}-${label}`"
+                                v-show="stringifyStructuredValue(value) !== '-'"
+                                class="console-log-detail-block"
+                              >
+                                <div class="console-log-detail-block__label">{{ label }}</div>
+                                <pre class="console-log-detail-block__content">{{ stringifyStructuredValue(value) }}</pre>
+                              </div>
+                            </div>
+                          </NCollapseTransition>
                         </article>
                       </div>
                       <div v-else class="hero-note min-h-[220px]">

@@ -20,6 +20,7 @@ const challengeExpanded = ref(false)
 const form = ref({
   userId: '',
   steamId64: '',
+  name: '',
 })
 
 const navItems = buildNavItems('/player')
@@ -36,6 +37,7 @@ async function queryPlayer() {
       params: {
         userId: form.value.userId.trim() || undefined,
         steamId64: form.value.steamId64.trim() || undefined,
+        name: form.value.name.trim() || undefined,
       },
     })
 
@@ -132,7 +134,7 @@ onMounted(() => {
 <template>
   <AppShell
     title="查询玩家"
-    subtitle="通过 UID 或 SteamID64 查询开水服玩家信息"
+    subtitle="通过 UID、SteamID64 或玩家名称查询开水服玩家信息"
     badge="查询玩家"
     :nav-items="navItems"
   >
@@ -154,7 +156,7 @@ onMounted(() => {
             <div>
               <p class="query-panel-header__eyebrow">Player Lookup</p>
               <h2 class="query-panel-header__title">查询玩家</h2>
-              <p class="query-panel-header__desc">支持通过 UID 或 SteamID64 查询开水服玩家信息.</p>
+              <p class="query-panel-header__desc">支持通过 UID、SteamID64 或玩家名称模糊匹配查询开水服玩家信息.</p>
             </div>
           </div>
 
@@ -165,6 +167,9 @@ onMounted(() => {
               </NFormItem>
               <NFormItem label="SteamID64">
                 <NInput v-model:value="form.steamId64" placeholder="7656119xxxxxxxxxx" />
+              </NFormItem>
+              <NFormItem label="玩家名称">
+                <NInput v-model:value="form.name" placeholder="支持忽略大小写的模糊匹配" />
               </NFormItem>
             </div>
             <NButton type="primary" size="large" class="query-panel-form__submit" :loading="loading" @click="queryPlayer">
@@ -178,7 +183,7 @@ onMounted(() => {
         <div v-if="!player" class="hero-note query-result-modal__empty">
           <div class="hero-note__inner">
             <div class="hero-note__title">暂时没有玩家结果</div>
-            <div class="hero-note__desc">输入 UID 或 SteamID64 后可在这里查看玩家资料</div>
+            <div class="hero-note__desc">输入 UID、SteamID64 或玩家名称后可在这里查看玩家资料</div>
           </div>
         </div>
 

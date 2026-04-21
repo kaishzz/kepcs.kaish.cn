@@ -92,6 +92,50 @@ const stagePlaceholder = computed(() => (
   filterForm.value.mapName ? '全部关卡' : '请先选择地图'
 ))
 
+function normalizeOptionValues(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((item) => String(item || '').trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
+function reconcileLeaderboardSelection(snapshot: MapChallengeLeaderboardSnapshot | null) {
+  if (!snapshot) {
+    return false
+  }
+
+  const validMaps = normalizeOptionValues(snapshot.filters.mapOptions || [])
+  if (filterForm.value.mapName && validMaps.length && !validMaps.includes(filterForm.value.mapName)) {
+    filterForm.value.mapName = validMaps[0]
+    filterForm.value.stage = ''
+    return true
+  }
+
+  if (!filterForm.value.mapName || filterForm.value.mode !== 'survival') {
+    return false
+  }
+
+  const validStages = normalizeOptionValues(
+    (snapshot.filters.stageOptions || [])
+      .filter((item) => String(item.mapName || '').trim() === filterForm.value.mapName)
+      .map((item) => item.stage),
+  )
+
+  if (!validStages.length) {
+    return false
+  }
+
+  if (!filterForm.value.stage || !validStages.includes(filterForm.value.stage)) {
+    filterForm.value.stage = validStages[0]
+    return true
+  }
+
+  return false
+}
+
 const summaryCards = computed(() => {
   if (!leaderboard.value) {
     return []
@@ -201,7 +245,13 @@ async function loadLeaderboard() {
       },
     })
 
-    leaderboard.value = data.leaderboard || null
+    const nextLeaderboard = data.leaderboard || null
+    leaderboard.value = nextLeaderboard
+
+    if (reconcileLeaderboardSelection(nextLeaderboard)) {
+      return
+    }
+
     rankingPage.value = 1
   } catch (error) {
     pushToast((error as Error).message, 'error')

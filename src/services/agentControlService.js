@@ -498,6 +498,21 @@ async function requestNodeCommandCancellation(commandId, payload = {}) {
   });
 
   if (row.status === NODE_COMMAND_STATUSES.RUNNING) {
+    if (payload.force) {
+      const cancelled = await cdkPrisma.nodeCommand.update({
+        where: { id: String(commandId) },
+        data: {
+          status: NODE_COMMAND_STATUSES.CANCELLED,
+          finishedAt: now,
+          result: nextResult,
+          errorMessage: String(payload.reason || "").trim() || "Command force cancelled by operator",
+        },
+        include: { node: true },
+      });
+
+      return serializeNodeCommand(cancelled);
+    }
+
     const updated = await cdkPrisma.nodeCommand.update({
       where: { id: String(commandId) },
       data: {

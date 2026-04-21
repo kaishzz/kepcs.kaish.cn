@@ -401,16 +401,8 @@ const rconServerOptions = computed(() =>
   buildServerSelectOptions(selectedNodeServers.value),
 )
 
-const maintenanceMonitorServerOptions = computed(() =>
-  buildServerSelectOptions(selectedNodeServers.value),
-)
-
 const maintenanceStartServerOptions = computed(() =>
   buildServerSelectOptions(selectedNodeServers.value),
-)
-
-const scheduleMonitorServerOptions = computed(() =>
-  buildServerSelectOptions(selectedScheduleFormServers.value),
 )
 
 const scheduleStartServerOptions = computed(() =>
@@ -918,7 +910,6 @@ function commandTargetText(command: NodeCommandItem) {
   const key = String(payload.key || '').trim()
   const rconCommand = String(payload.command || '').trim()
   const serverKeys = normalizeServerKeyList(payload.serverKeys || payload.targets)
-  const monitorServerKey = normalizeOptionalServerKey(payload.monitorServerKey)
   const startServerKeys = normalizeSelectedServerKeys(payload.startServerKeys)
 
   if (command.commandType.includes('_group')) {
@@ -947,10 +938,6 @@ function commandTargetText(command: NodeCommandItem) {
     || command.commandType === 'node.monitor_start'
   ) {
     const pieces = []
-
-    if (monitorServerKey) {
-      pieces.push(`监控 ${monitorServerKey}`)
-    }
 
     if (
       (command.commandType === 'node.check_update'
@@ -1167,10 +1154,6 @@ function buildManualRconPayload() {
 
 function buildMaintenancePayload(commandType: NodeActionType) {
   const payload: Record<string, unknown> = {}
-
-  if (commandSupportsMonitorServer(commandType) && maintenanceCommandForm.value.monitorServerKey) {
-    payload.monitorServerKey = maintenanceCommandForm.value.monitorServerKey
-  }
 
   if (commandSupportsStartTargets(commandType)) {
     const startServerKeys = normalizeSelectedServerKeys(maintenanceCommandForm.value.startServerKeys)
@@ -1801,11 +1784,6 @@ function queueNodeInstruction(commandType: Exclude<NodeActionType, 'docker.start
     lines.push(commandText)
   }
 
-  if (commandSupportsMonitorServer(commandType)) {
-    const monitorServerKey = normalizeOptionalServerKey(payload.monitorServerKey)
-    lines.push(`崩溃检查目标: ${resolveServerChoiceLabel(selectedNodeServers.value, monitorServerKey)}`)
-  }
-
   if (commandSupportsStartTargets(commandType)) {
     const startServerKeys = normalizeSelectedServerKeys(payload.startServerKeys)
     lines.push(`崩溃检查成功后启动: ${resolveStartTargetsLabel(selectedNodeServers.value, startServerKeys)}`)
@@ -2165,10 +2143,6 @@ function buildSchedulePayload() {
       group: scheduleForm.value.rconGroup,
       command,
     }
-  }
-
-  if (commandSupportsMonitorServer(scheduleForm.value.commandType) && scheduleForm.value.monitorServerKey) {
-    payload.monitorServerKey = scheduleForm.value.monitorServerKey
   }
 
   if (commandSupportsStartTargets(scheduleForm.value.commandType)) {
@@ -2907,15 +2881,6 @@ onBeforeUnmount(() => {
                         <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新数据" @click="refreshAll()">↻</NButton>
                       </div>
                     </NFormItem>
-                    <NFormItem label="崩溃检查目标" class="col-span-full">
-                      <NSelect
-                        v-model:value="maintenanceCommandForm.monitorServerKey"
-                        clearable
-                        filterable
-                        :options="maintenanceMonitorServerOptions"
-                        placeholder="不选则使用 Agent 默认监控服"
-                      />
-                    </NFormItem>
                     <NFormItem label="崩溃检查成功后启动" class="col-span-full">
                       <NSelect
                         v-model:value="maintenanceCommandForm.startServerKeys"
@@ -2929,7 +2894,7 @@ onBeforeUnmount(() => {
                     </NFormItem>
                   </NForm>
                   <div class="agent-command-card__summary">
-                    检查更新 / 崩溃检查 / 崩溃检查后启动会读取这里的监控目标；不选监控目标时回退到 Agent 默认配置。
+                    检查更新 / 崩溃检查 / 崩溃检查后启动都会直接使用 Agent 默认监控服。
                   </div>
                   <div class="agent-command-card__summary">
                     需要“崩溃检查成功后启动”时，可以在这里多选要启动的服务器；不选则默认启动除监控服外的全部服务器。
@@ -3257,19 +3222,6 @@ onBeforeUnmount(() => {
                     />
                   </NFormItem>
                   <NFormItem
-                    v-if="commandSupportsMonitorServer(scheduleForm.commandType)"
-                    label="崩溃检查目标"
-                    class="col-span-full"
-                  >
-                    <NSelect
-                      v-model:value="scheduleForm.monitorServerKey"
-                      clearable
-                      filterable
-                      :options="scheduleMonitorServerOptions"
-                      placeholder="不选则使用 Agent 默认监控服"
-                    />
-                  </NFormItem>
-                  <NFormItem
                     v-if="commandSupportsStartTargets(scheduleForm.commandType)"
                     label="崩溃检查成功后启动"
                     class="col-span-full"
@@ -3290,8 +3242,8 @@ onBeforeUnmount(() => {
                     class="col-span-full"
                   >
                     <div class="agent-schedule-rule-note">
-                      <strong>监控目标和启动目标按当前任务节点保存</strong>
-                      <span>不选择监控目标时回退到 Agent 默认监控服；不选择启动目标时默认启动除监控服外的全部服务器。</span>
+                      <strong>监控服固定使用 Agent 默认配置</strong>
+                      <span>不选择启动目标时，默认启动除监控服外的全部服务器。</span>
                     </div>
                   </NFormItem>
                   <NFormItem v-if="scheduleForm.commandType === 'node.rcon_command'" label="RCON 目标分组">

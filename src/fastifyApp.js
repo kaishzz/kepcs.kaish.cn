@@ -505,16 +505,18 @@ const playerSearchSchema = z
   .object({
     userId: z.string().trim().optional(),
     steamId64: z.string().trim().optional(),
+    name: z.string().trim().max(MAX_DB_VARCHAR, "玩家名称不能超过 191 个字符").optional(),
   })
   .superRefine((value, ctx) => {
     const userId = String(value.userId || "").trim();
     const steamId64 = String(value.steamId64 || "").trim();
+    const name = String(value.name || "").trim();
 
-    if (!userId && !steamId64) {
+    if (!userId && !steamId64 && !name) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "请填写 UID 或 SteamID64",
-        path: ["userId"],
+        message: "请填写 UID、SteamID64 或玩家名称",
+        path: ["name"],
       });
       return;
     }
@@ -1743,6 +1745,7 @@ async function createFastifyApp() {
       const player = await findPlayerProfile({
         userId: payload.userId ? Number(payload.userId) : undefined,
         steamId: payload.steamId64,
+        name: payload.name,
       });
 
       if (!player) {

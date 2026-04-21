@@ -2340,6 +2340,42 @@ img {
   cursor: default;
 }
 
+.console-log-preview {
+  display: block;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.console-log-expand {
+  display: grid;
+  gap: 12px;
+}
+
+.console-log-detail-block {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.console-log-detail-block__label {
+  color: var(--app-text-muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.console-log-detail-block__content {
+  margin: 0;
+  color: #f4f8fb;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12px/1.6 'JetBrains Mono', 'Fira Code', monospace;
+}
+
 .page-enter-active,
 .page-leave-active {
   transition: opacity 220ms ease, transform 220ms ease, filter 220ms ease;

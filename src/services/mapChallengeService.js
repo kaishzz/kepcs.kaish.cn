@@ -132,13 +132,16 @@ function normalizeChallengeRow(row) {
   };
 }
 
-async function fetchMapOptions(pool) {
-  const [rows] = await pool.query(
+async function fetchMapOptions(pool, { mode = "ALL" } = {}) {
+  const { whereSql, params } = buildWhereClause({ mode, mapName: undefined, stage: undefined });
+  const [rows] = await pool.execute(
     `
-      SELECT DISTINCT MapName
-      FROM kep_mapchallenge
-      ORDER BY MapName ASC
+      SELECT DISTINCT c.MapName
+      FROM kep_mapchallenge c
+      ${whereSql}
+      ORDER BY c.MapName ASC
     `,
+    params,
   );
 
   return rows
@@ -375,7 +378,7 @@ async function listMapChallengeLeaderboard({
     [summaryRows],
     [recordRows],
   ] = await Promise.all([
-    fetchMapOptions(pool),
+    fetchMapOptions(pool, { mode: safeMode }),
     fetchStageOptions(pool, { mode: safeMode, mapName: safeMapName }),
     pool.execute(
       `
