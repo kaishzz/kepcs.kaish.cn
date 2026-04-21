@@ -3742,7 +3742,27 @@ onBeforeUnmount(() => {
               <span>{{ logModalHint }}</span>
               <span v-if="commandLogs.length">共 {{ commandLogs.length }} 行</span>
             </div>
-            <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新日志" @click="refreshLogModal()">↻</NButton>
+            <div class="agent-log-toolbar__actions">
+              <NButton
+                v-if="logModal.command && props.canViewRunningCommands"
+                secondary
+                class="console-button-tone--warning"
+                :disabled="!canGracefullyCancelCommand(logModal.command)"
+                @click="requestCommandCancellation(logModal.command, false)"
+              >
+                终止
+              </NButton>
+              <NButton
+                v-if="logModal.command && props.canViewRunningCommands"
+                secondary
+                class="console-button-tone--danger"
+                :disabled="!canForceCancelCommand(logModal.command)"
+                @click="requestCommandCancellation(logModal.command, true)"
+              >
+                强制终止
+              </NButton>
+              <NButton secondary class="console-action-icon console-button-tone--neutral-strong" title="刷新日志" @click="refreshLogModal()">↻</NButton>
+            </div>
           </div>
 
           <div v-if="loadingLogs" class="hero-note min-h-[240px]">
@@ -3879,6 +3899,13 @@ onBeforeUnmount(() => {
   min-width: 0;
   color: var(--app-text-muted);
   font-size: 12px;
+}
+
+.agent-log-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .agent-log-toolbar__dot {
