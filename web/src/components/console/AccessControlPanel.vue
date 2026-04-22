@@ -991,12 +991,13 @@ watch(
   width: 100%;
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .permission-checkbox-item :deep(.n-checkbox-box-wrapper) {
   flex: 0 0 auto;
   padding-right: 8px;
+  padding-top: 2px;
 }
 
 .permission-checkbox-item :deep(.n-checkbox__label) {

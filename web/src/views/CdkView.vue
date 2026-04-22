@@ -67,6 +67,7 @@ type BatchAction = 'set-note' | 'set-owner' | 'set-status' | 'delete'
 type LogSubTab = 'audit' | 'orders'
 type MapChallengeSubTab = 'edit' | 'recent'
 type ServerDataSubTab = 'catalog' | 'whitelist' | 'migration'
+type AuditLogRow = AuditLogItem & { _rowKey: string }
 type ConsoleTab =
   | 'my-cdks'
   | 'manage-cdks'
@@ -120,7 +121,7 @@ const mapChallengeSubTab = ref<MapChallengeSubTab>('edit')
 const serverDataSubTab = ref<ServerDataSubTab>('catalog')
 const myCdks = ref<CdkItem[]>([])
 const managedCdks = ref<CdkItem[]>([])
-const logs = ref<AuditLogItem[]>([])
+const logs = ref<AuditLogRow[]>([])
 const orderLogs = ref<OrderItem[]>([])
 const products = ref<CdkProductItem[]>([])
 const overviewNodes = ref<ManagedNodeItem[]>([])
@@ -459,7 +460,7 @@ const logSubTabOptions = computed(() =>
 
 const mapChallengeSubTabOptions = computed(() =>
   [
-    canEditMapChallenges.value ? { label: '新增 / 更新记录', value: 'edit' as const } : null,
+    canEditMapChallenges.value ? { label: '更新记录', value: 'edit' as const } : null,
     canViewRecentMapChallenges.value ? { label: '最近记录', value: 'recent' as const } : null,
   ].filter(Boolean) as Array<{ label: string, value: typeof mapChallengeSubTab.value }>,
 )
@@ -861,6 +862,10 @@ function cdkRowKey(row: CdkItem) {
   return row.id
 }
 
+function auditLogRowKey(row: AuditLogRow) {
+  return row._rowKey
+}
+
 function mapChallengeRowKey(row: MapChallengeRecordItem) {
   return `${row.steamId}::${row.mapName}::${row.stage}::${row.mode}`
 }
@@ -1117,18 +1122,18 @@ function renderCopyButton(value: string | null | undefined, label: string) {
   )
 }
 
-function toggleExpandedLogRow(target: typeof expandedAuditLogIds, id: string) {
-  target.value = target.value.includes(id)
-    ? target.value.filter((item) => item !== id)
-    : [...target.value, id]
+function toggleExpandedLogRow(target: Ref<DataTableRowKey[]>, key: DataTableRowKey) {
+  target.value = target.value.includes(key)
+    ? target.value.filter((item) => item !== key)
+    : [...target.value, key]
 }
 
-function isAuditLogExpanded(id: string) {
-  return expandedAuditLogIds.value.includes(id)
+function isAuditLogExpanded(row: AuditLogRow) {
+  return expandedAuditLogIds.value.includes(auditLogRowKey(row))
 }
 
-function toggleAuditLogExpanded(id: string) {
-  toggleExpandedLogRow(expandedAuditLogIds, id)
+function toggleAuditLogExpanded(row: AuditLogRow) {
+  toggleExpandedLogRow(expandedAuditLogIds, auditLogRowKey(row))
 }
 
 function isOrderLogExpanded(orderNo: string) {
@@ -1237,7 +1242,12 @@ async function loadLogs(silent = false) {
         includeSystem: logFilters.value.includeSystem || undefined,
       },
     })
-    logs.value = data.logs || []
+    logs.value = Array.isArray(data.logs)
+      ? data.logs.map((row: AuditLogItem, index: number) => ({
+          ...row,
+          _rowKey: `${row.id || 'audit'}::${index}::${row.createdAt || ''}::${row.action || ''}`,
+        }))
+      : []
     if (!silent) {
       logPagination.reset()
     }
@@ -1410,6 +1420,7 @@ function fillMapChallengeForm(row: MapChallengeRecordItem) {
     mode: row.mode,
     duration: row.mode === 'survival' ? Math.max(0, Number(row.duration) || 0) : 0,
   }
+  mapChallengeSubTab.value = 'edit'
 }
 
 async function loadMapChallenges() {
@@ -2202,7 +2213,7 @@ const manageColumns = computed<DataTableColumns<CdkItem>>(() => {
   return columns
 })
 
-const logColumns = computed<DataTableColumns<AuditLogItem>>(() => {
+const logColumns = computed<DataTableColumns<AuditLogRow>>(() => {
   if (isMobileView.value) {
     return [
       { title: '时间', key: 'createdAt', render: (row) => formatMobileDateTime(row.createdAt) },
@@ -2219,15 +2230,15 @@ const logColumns = computed<DataTableColumns<AuditLogItem>>(() => {
   return [
     { type: 'expand', renderExpand: renderAuditLogExpand },
     { title: '时间', key: 'createdAt', width: 176, render: (row) => formatDate(row.createdAt) },
-    { title: '操作者', key: 'actorSteamId', width: 182, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.actorSteamId, '操作者 SteamID64') },
+    { title: '操作者', key: 'actorSteamId', width: 176, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.actorSteamId, '操作者 SteamID64') },
     {
       title: '身份',
       key: 'actorRole',
-      width: 108,
+      width: 100,
       render: (row) => h(NTag, { round: false, type: roleTagType(row.actorRole) }, { default: () => auditActorRoleText(row.actorRole) }),
     },
-    { title: '动作', key: 'action', width: 170, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.action, '动作') },
-    { title: '目标类型', key: 'targetType', width: 152, ellipsis: { tooltip: true } },
+    { title: '动作', key: 'action', width: 160, ellipsis: { tooltip: true }, render: (row) => renderCopyButton(row.action, '动作') },
+    { title: '目标类型', key: 'targetType', width: 146, ellipsis: { tooltip: true } },
   ]
 })
 
@@ -2423,9 +2434,9 @@ watch(() => [
 })
 
 watch(
-  () => logPagination.pagedRows.value.map((row) => row.id),
+  () => logPagination.pagedRows.value.map((row) => String(auditLogRowKey(row))),
   (visibleIds) => {
-    expandedAuditLogIds.value = expandedAuditLogIds.value.filter((id) => visibleIds.includes(id))
+    expandedAuditLogIds.value = expandedAuditLogIds.value.filter((id) => visibleIds.includes(String(id)))
   },
   { immediate: true },
 )
@@ -3070,20 +3081,22 @@ onBeforeUnmount(() => {
                         <NFormItem label="目标类型">
                           <NInput v-model:value="logFilters.targetType" />
                         </NFormItem>
-                        <NFormItem label="system 日志">
+                        <NFormItem label="系统日志">
                           <NCheckbox v-model:checked="logFilters.includeSystem">
-                            显示操作者为 system 的记录
+                            显示系统操作者记录
                           </NCheckbox>
                         </NFormItem>
                       </NForm>
                     </ConsoleSectionBlock>
                     <div v-if="!isMobileView" class="table-shell table-shell--stable table-shell--log-stable table-shell--page-12 table-shell--audit-log">
                       <NDataTable
+                        v-model:expanded-row-keys="expandedAuditLogIds"
                         :columns="logColumns"
                         :data="logPagination.pagedRows.value"
                         :loading="logLoading"
                         :bordered="false"
-                        :scroll-x="880"
+                        :scroll-x="840"
+                        :row-key="auditLogRowKey"
                       />
                     </div>
                     <div v-else class="mobile-record-list">
@@ -3093,11 +3106,11 @@ onBeforeUnmount(() => {
                       <div v-else-if="logPagination.pagedRows.value.length" class="mobile-record-list__stack">
                         <article
                           v-for="row in logPagination.pagedRows.value"
-                          :key="row.id"
+                          :key="String(auditLogRowKey(row))"
                           class="fold-card mobile-info-card"
-                          :class="{ 'fold-card--expanded': isAuditLogExpanded(row.id) }"
+                          :class="{ 'fold-card--expanded': isAuditLogExpanded(row) }"
                         >
-                          <button type="button" class="fold-card__trigger" @click="toggleAuditLogExpanded(row.id)">
+                          <button type="button" class="fold-card__trigger" @click="toggleAuditLogExpanded(row)">
                             <div class="fold-card__title">
                               <strong>{{ row.action }}</strong>
                               <span>{{ formatMobileDateTime(row.createdAt) }}</span>
@@ -3105,9 +3118,9 @@ onBeforeUnmount(() => {
                                 {{ row.actorSteamId }} · {{ auditActorRoleText(row.actorRole) }} · {{ row.targetType || '-' }}
                               </span>
                             </div>
-                            <span class="fold-card__arrow" :class="{ 'is-open': isAuditLogExpanded(row.id) }">⌄</span>
+                            <span class="fold-card__arrow" :class="{ 'is-open': isAuditLogExpanded(row) }">⌄</span>
                           </button>
-                          <NCollapseTransition :show="isAuditLogExpanded(row.id)">
+                          <NCollapseTransition :show="isAuditLogExpanded(row)">
                             <div class="fold-card__body">
                               <div class="mobile-info-card__grid">
                                 <div class="mobile-info-card__item">
@@ -3272,7 +3285,7 @@ onBeforeUnmount(() => {
                 <ConsolePanelCard
                   v-if="mapChallengeSubTab === 'edit'"
                   key="map-challenges-edit"
-                  title="新增 / 更新记录"
+                  title="更新记录"
                   description="统一维护魔怔数据记录，新增和更新使用同一张表单。"
                 >
                   <NForm label-placement="top" class="console-field-grid cols-4">

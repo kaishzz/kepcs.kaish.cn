@@ -880,7 +880,7 @@ const gotifyConfigUpdateSchema = z.object({
 
 const gotifyTestSchema = z.object({
   channelKeys: z.array(z.string().trim().min(1).max(64)).min(1, "至少选择一个通知渠道").max(16, "通知渠道不能超过 16 个"),
-  title: z.string().trim().min(1, "通知标题不能为空").max(160, "通知标题不能超过 160 个字符").optional().default("KepCs Gotify"),
+  title: z.string().trim().min(1, "通知标题不能为空").max(160, "通知标题不能超过 160 个字符").optional().default("KepCs"),
   message: z.string().trim().min(1, "通知内容不能为空").max(4000, "通知内容不能超过 4000 个字符").optional().default("测试文本"),
   priority: z.coerce.number().int().min(0, "优先级不能小于 0").max(10, "优先级不能超过 10").optional(),
 });

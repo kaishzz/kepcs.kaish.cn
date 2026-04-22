@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   NButton,
+  NCollapseTransition,
   NForm,
   NFormItem,
   NInput,
@@ -42,13 +43,14 @@ const testing = ref(false)
 const testingKeys = ref<string[]>([])
 const notificationSubTab = ref<NotificationSubTab>('create')
 const manageSelectionKeys = ref<string[]>([])
+const expandedManageChannelIds = ref<string[]>([])
 const form = ref<{ channels: GotifyChannelFormItem[] }>({
   channels: [],
 })
 const channelDraft = ref<GotifyChannelFormItem>(createChannelDraft())
 const testForm = ref({
   channelKeys: [] as string[],
-  title: 'KepCs Gotify',
+  title: 'KepCs',
   message: '测试文本',
   priority: 5,
 })
@@ -111,7 +113,7 @@ const previewChannel = computed(() => {
 
 const gotifyPayloadPreview = computed(() =>
   JSON.stringify({
-    title: testForm.value.title.trim() || 'KepCs Gotify',
+    title: testForm.value.title.trim() || 'KepCs',
     message: testForm.value.message.trim() || '测试文本',
     priority: Number.isFinite(Number(testForm.value.priority)) ? Number(testForm.value.priority) : 5,
   }, null, 2),
@@ -152,6 +154,7 @@ function replaceChannels(channels: GotifyChannelItem[]) {
   }
   syncTestFormChannels()
   syncManageSelection()
+  syncManageExpanded()
   emit('updated', serializeConfig())
 }
 
@@ -171,6 +174,21 @@ function syncTestFormChannels() {
 function syncManageSelection() {
   const validKeys = new Set(form.value.channels.filter((channel) => channel.key).map((channel) => channel.key))
   manageSelectionKeys.value = manageSelectionKeys.value.filter((key) => validKeys.has(key))
+}
+
+function syncManageExpanded() {
+  const validIds = new Set(form.value.channels.map((channel) => channel.localId))
+  expandedManageChannelIds.value = expandedManageChannelIds.value.filter((id) => validIds.has(id))
+}
+
+function isManageChannelExpanded(localId: string) {
+  return expandedManageChannelIds.value.includes(localId)
+}
+
+function toggleManageChannel(localId: string) {
+  expandedManageChannelIds.value = expandedManageChannelIds.value.includes(localId)
+    ? expandedManageChannelIds.value.filter((id) => id !== localId)
+    : [...expandedManageChannelIds.value, localId]
 }
 
 function buildConfigPayload() {
@@ -274,6 +292,7 @@ function addDraftChannelToForm() {
 
   form.value.channels = [...form.value.channels, draft]
   manageSelectionKeys.value = Array.from(new Set([...manageSelectionKeys.value, draft.key]))
+  expandedManageChannelIds.value = Array.from(new Set([...expandedManageChannelIds.value, draft.localId]))
   syncTestFormChannels()
   notificationSubTab.value = 'manage'
   resetChannelDraft()
@@ -366,6 +385,7 @@ function removeChannelFromForm(localId: string) {
   form.value.channels = form.value.channels.filter((channel) => channel.localId !== localId)
   syncTestFormChannels()
   syncManageSelection()
+  syncManageExpanded()
   pushToast('渠道已从待保存列表移除，记得保存配置', 'success')
 }
 
@@ -394,7 +414,7 @@ async function sendChannelTest(channel: GotifyChannelFormItem) {
   try {
     await sendTestNotification({
       channelKeys: [channelKey],
-      title: `KepCs Gotify · ${channel.name || channelKey}`,
+      title: `KepCs · ${channel.name || channelKey}`,
       message: '测试文本',
       priority: channel.priority,
     })
@@ -421,7 +441,7 @@ async function sendCustomTest() {
   try {
     await sendTestNotification({
       channelKeys: testForm.value.channelKeys,
-      title: testForm.value.title.trim() || 'KepCs Gotify',
+      title: testForm.value.title.trim() || 'KepCs',
       message: testForm.value.message.trim() || '测试文本',
       priority: Number.isFinite(Number(testForm.value.priority)) ? Number(testForm.value.priority) : 5,
     })
@@ -573,55 +593,62 @@ watch(
 
               <div class="gotify-channel-list">
                 <section v-for="channel in visibleManageChannels" :key="channel.localId" class="gotify-channel-card">
-                  <div class="gotify-channel-card__header">
-                    <div class="gotify-channel-card__title">
-                      <strong>{{ channel.name || '未命名渠道' }}</strong>
-                      <span>{{ channel.key || '未填写标识' }}</span>
+                  <button type="button" class="gotify-channel-card__trigger" @click="toggleManageChannel(channel.localId)">
+                    <div class="gotify-channel-card__header">
+                      <div class="gotify-channel-card__title">
+                        <strong>{{ channel.name || '未命名渠道' }}</strong>
+                        <span>{{ channel.key || '未填写标识' }}</span>
+                      </div>
+                      <div class="gotify-channel-card__side">
+                        <NTag round :type="channel.enabled ? 'success' : 'default'">
+                          {{ channel.enabled ? '已启用' : '已停用' }}
+                        </NTag>
+                        <span class="gotify-channel-card__arrow" :class="{ 'is-open': isManageChannelExpanded(channel.localId) }">⌄</span>
+                      </div>
                     </div>
-                    <div class="gotify-channel-card__side">
-                      <NTag round :type="channel.enabled ? 'success' : 'default'">
-                        {{ channel.enabled ? '已启用' : '已停用' }}
-                      </NTag>
+                  </button>
+
+                  <NCollapseTransition :show="isManageChannelExpanded(channel.localId)">
+                    <div class="gotify-channel-card__body">
+                      <NForm label-placement="top" class="console-field-grid cols-2">
+                        <NFormItem label="渠道标识">
+                          <NInput v-model:value="channel.key" placeholder="ops-main" />
+                        </NFormItem>
+                        <NFormItem label="渠道名称">
+                          <NInput v-model:value="channel.name" placeholder="运维主群" />
+                        </NFormItem>
+                        <NFormItem label="Gotify 地址">
+                          <NInput v-model:value="channel.serverUrl" placeholder="https://gotify.kaish.cn" />
+                        </NFormItem>
+                        <NFormItem label="默认优先级">
+                          <NInputNumber v-model:value="channel.priority" :min="0" :max="10" :show-button="false" class="w-full" />
+                        </NFormItem>
+                        <NFormItem label="App Token" class="col-span-full">
+                          <NInput v-model:value="channel.token" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="输入 Gotify App Token" />
+                        </NFormItem>
+                        <NFormItem label="渠道说明" class="col-span-full">
+                          <NInput v-model:value="channel.description" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="比如：更新通知 / 重启通知 / 失败告警" />
+                        </NFormItem>
+                        <NFormItem label="启用状态">
+                          <NSwitch v-model:value="channel.enabled" />
+                        </NFormItem>
+                      </NForm>
+
+                      <div class="gotify-channel-card__actions">
+                        <NButton
+                          secondary
+                          class="console-button-tone--neutral-strong"
+                          :loading="testingKeys.includes(channel.key)"
+                          @click="sendChannelTest(channel)"
+                        >
+                          发送测试
+                        </NButton>
+                        <NButton secondary class="console-button-tone--neutral-strong" @click="removeChannelFromForm(channel.localId)">
+                          从配置移除
+                        </NButton>
+                      </div>
                     </div>
-                  </div>
-
-                  <NForm label-placement="top" class="console-field-grid cols-2">
-                    <NFormItem label="渠道标识">
-                      <NInput v-model:value="channel.key" placeholder="ops-main" />
-                    </NFormItem>
-                    <NFormItem label="渠道名称">
-                      <NInput v-model:value="channel.name" placeholder="运维主群" />
-                    </NFormItem>
-                    <NFormItem label="Gotify 地址">
-                      <NInput v-model:value="channel.serverUrl" placeholder="https://gotify.kaish.cn" />
-                    </NFormItem>
-                    <NFormItem label="默认优先级">
-                      <NInputNumber v-model:value="channel.priority" :min="0" :max="10" :show-button="false" class="w-full" />
-                    </NFormItem>
-                    <NFormItem label="App Token" class="col-span-full">
-                      <NInput v-model:value="channel.token" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="输入 Gotify App Token" />
-                    </NFormItem>
-                    <NFormItem label="渠道说明" class="col-span-full">
-                      <NInput v-model:value="channel.description" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="比如：更新通知 / 重启通知 / 失败告警" />
-                    </NFormItem>
-                    <NFormItem label="启用状态">
-                      <NSwitch v-model:value="channel.enabled" />
-                    </NFormItem>
-                  </NForm>
-
-                  <div class="gotify-channel-card__actions">
-                    <NButton
-                      secondary
-                      class="console-button-tone--neutral-strong"
-                      :loading="testingKeys.includes(channel.key)"
-                      @click="sendChannelTest(channel)"
-                    >
-                      发送测试
-                    </NButton>
-                    <NButton secondary class="console-button-tone--neutral-strong" @click="removeChannelFromForm(channel.localId)">
-                      从配置移除
-                    </NButton>
-                  </div>
+                  </NCollapseTransition>
                 </section>
               </div>
             </div>
@@ -654,7 +681,7 @@ watch(
                     />
                   </NFormItem>
                   <NFormItem label="测试标题">
-                    <NInput v-model:value="testForm.title" placeholder="KepCs Gotify" />
+                    <NInput v-model:value="testForm.title" placeholder="KepCs" />
                   </NFormItem>
                   <NFormItem label="测试优先级">
                     <NInputNumber v-model:value="testForm.priority" :min="0" :max="10" :show-button="false" class="w-full" />
@@ -803,11 +830,52 @@ watch(
 
 .gotify-channel-card {
   display: grid;
-  gap: 14px;
-  padding: 16px;
+  gap: 0;
   border: 1px solid var(--app-border-soft);
   border-radius: var(--app-radius-md);
   background: rgba(255, 255, 255, 0.014);
+  overflow: hidden;
+}
+
+.gotify-channel-card__trigger {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gotify-channel-card__body {
+  display: grid;
+  gap: 14px;
+  padding: 0 16px 16px;
+}
+
+.gotify-channel-card__side {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gotify-channel-card__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  color: var(--app-text-muted);
+  font-size: 14px;
+  transition: transform 180ms ease, color 180ms ease;
+}
+
+.gotify-channel-card__arrow.is-open {
+  transform: rotate(180deg);
+  color: var(--app-text);
 }
 
 .gotify-channel-card__header {
@@ -836,6 +904,7 @@ watch(
   .gotify-panel__actions,
   .gotify-channel-card__actions,
   .gotify-channel-card__header,
+  .gotify-channel-card__trigger,
   .gotify-helper-card__actions {
     flex-direction: column;
   }
