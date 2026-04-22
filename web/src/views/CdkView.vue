@@ -461,7 +461,7 @@ const logSubTabOptions = computed(() =>
 const mapChallengeSubTabOptions = computed(() =>
   [
     canEditMapChallenges.value ? { label: '更新记录', value: 'edit' as const } : null,
-    canViewRecentMapChallenges.value ? { label: '最近记录', value: 'recent' as const } : null,
+    canViewRecentMapChallenges.value ? { label: '记录管理', value: 'recent' as const } : null,
   ].filter(Boolean) as Array<{ label: string, value: typeof mapChallengeSubTab.value }>,
 )
 
@@ -3318,8 +3318,8 @@ onBeforeUnmount(() => {
                 <ConsolePanelCard
                   v-else
                   key="map-challenges-recent"
-                  title="最近记录"
-                  description="按玩家、地图、阶段和模式筛选最近写入的魔怔数据。"
+                  title="记录管理"
+                  description="按玩家、地图、阶段和模式筛选全部魔怔数据记录。"
                 >
                   <ConsoleSectionBlock title="筛选条件">
                     <NForm label-placement="top" class="console-field-grid cols-5 console-form-grid console-form-grid--balanced">
@@ -3528,12 +3528,7 @@ onBeforeUnmount(() => {
                     <NInput v-model:value="productForm.name" placeholder="" />
                   </NFormItem>
                   <NFormItem label="填写说明">
-                    <NInput
-                      v-model:value="productForm.description"
-                      type="textarea"
-                      :autosize="{ minRows: 3, maxRows: 6 }"
-                      placeholder="可留空"
-                    />
+                    <NInput v-model:value="productForm.description" placeholder="可留空" />
                   </NFormItem>
                   <NFormItem label="商品类型">
                     <NSelect v-model:value="productForm.productType" :options="payProductTypeOptions" />
@@ -3668,12 +3663,7 @@ onBeforeUnmount(() => {
           <NInput v-model:value="productEditor.name" />
         </NFormItem>
         <NFormItem label="填写说明">
-          <NInput
-            v-model:value="productEditor.description"
-            type="textarea"
-            :autosize="{ minRows: 3, maxRows: 6 }"
-            placeholder="可留空"
-          />
+          <NInput v-model:value="productEditor.description" placeholder="可留空" />
         </NFormItem>
         <NFormItem label="商品类型">
           <NSelect v-model:value="productEditor.productType" :options="payProductTypeOptions" />

@@ -412,7 +412,7 @@ watch(
   <div class="console-wrap access-console-wrap">
     <ConsolePanelCard
       title="权限分配"
-      description="按权限组或 SteamID 直授管理后台页面与子分组访问范围，统计条带和内容面板统一复用后台骨架。"
+      description="按权限组或 SteamID 直授管理后台主菜单、子菜单和页面访问范围，统计条带和内容面板统一复用后台骨架。"
       class="access-hero-card"
     >
       <template #header-extra>
@@ -434,7 +434,7 @@ watch(
         <ConsolePanelCard
           v-if="canManageGroups"
           title="权限组"
-          description="适合给同一批成员分配整组后台权限和子菜单访问范围。"
+          description="适合给同一批成员分配整组后台主菜单、子菜单和页面权限。"
           class="access-card-shell"
         >
           <template #header-extra>
@@ -498,7 +498,7 @@ watch(
         <ConsolePanelCard
           v-if="canManageUsers"
           title="SteamID 直授"
-          description="适合给单个 SteamID 单独开放页面或临时附加某几个操作权限。"
+          description="适合给单个 SteamID 单独开放主菜单、子菜单或临时附加页面权限。"
           class="access-card-shell"
         >
           <template #header-extra>
@@ -603,7 +603,7 @@ watch(
           <div class="access-modal-section__header">
             <div class="console-card-head">
               <div class="console-card-head__title">权限勾选</div>
-              <div class="console-card-head__desc">按功能分区选择该权限组可访问的页面和子菜单</div>
+              <div class="console-card-head__desc">按主菜单、子菜单和页面权限选择该权限组可访问范围</div>
             </div>
             <NTag round>已选 {{ groupModal.permissions.length }}</NTag>
           </div>
@@ -613,7 +613,7 @@ watch(
               <section v-for="section in permissionSections" :key="section.name" class="permission-section-card">
                 <div class="permission-section-card__head">
                   <div>
-                    <div class="permission-section-card__eyebrow">主目录</div>
+                    <div class="permission-section-card__eyebrow">主菜单</div>
                     <div class="permission-section-card__title">{{ section.name }}</div>
                   </div>
                   <NTag size="small" round>{{ section.directories.reduce((sum, directory) => sum + directory.items.length, 0) }}</NTag>
@@ -623,7 +623,7 @@ watch(
                   <section v-for="directory in section.directories" :key="directory.key" class="permission-directory-card">
                     <div class="permission-directory-card__head">
                       <div>
-                        <div class="permission-directory-card__eyebrow">子目录</div>
+                        <div class="permission-directory-card__eyebrow">子菜单</div>
                         <div class="permission-directory-card__title">{{ directory.label }}</div>
                       </div>
                       <NTag size="small" round>{{ directory.items.length }}</NTag>
@@ -662,7 +662,7 @@ watch(
         <section class="console-subsection access-modal-section">
           <div class="console-card-head">
             <div class="console-card-head__title">直授信息</div>
-            <div class="console-card-head__desc">为单个 SteamID 直接分配页面与子菜单权限</div>
+            <div class="console-card-head__desc">为单个 SteamID 直接分配主菜单、子菜单和页面权限</div>
           </div>
           <NForm label-placement="top" class="console-field-grid cols-2">
             <NFormItem label="SteamID64">
@@ -678,7 +678,7 @@ watch(
           <div class="access-modal-section__header">
             <div class="console-card-head">
               <div class="console-card-head__title">权限勾选</div>
-              <div class="console-card-head__desc">只给当前 SteamID 追加需要的权限点</div>
+              <div class="console-card-head__desc">只给当前 SteamID 追加需要的主菜单、子菜单和页面权限</div>
             </div>
             <NTag round>已选 {{ directUserModal.permissions.length }}</NTag>
           </div>
@@ -688,7 +688,7 @@ watch(
               <section v-for="section in permissionSections" :key="section.name" class="permission-section-card">
                 <div class="permission-section-card__head">
                   <div>
-                    <div class="permission-section-card__eyebrow">主目录</div>
+                    <div class="permission-section-card__eyebrow">主菜单</div>
                     <div class="permission-section-card__title">{{ section.name }}</div>
                   </div>
                   <NTag size="small" round>{{ section.directories.reduce((sum, directory) => sum + directory.items.length, 0) }}</NTag>
@@ -698,7 +698,7 @@ watch(
                   <section v-for="directory in section.directories" :key="directory.key" class="permission-directory-card">
                     <div class="permission-directory-card__head">
                       <div>
-                        <div class="permission-directory-card__eyebrow">子目录</div>
+                        <div class="permission-directory-card__eyebrow">子菜单</div>
                         <div class="permission-directory-card__title">{{ directory.label }}</div>
                       </div>
                       <NTag size="small" round>{{ directory.items.length }}</NTag>
@@ -850,7 +850,7 @@ watch(
 
 .access-card-section {
   gap: 10px;
-  min-height: 280px;
+  min-height: 0;
   align-content: start;
 }
 
@@ -923,17 +923,21 @@ watch(
 }
 
 .permission-section-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 16px;
-  align-items: start;
+  display: block;
+  column-count: 2;
+  column-gap: 16px;
 }
 
 .permission-section-card {
   gap: 12px;
+  display: inline-grid;
+  width: 100%;
   padding: 14px 16px;
+  margin: 0 0 16px;
   border: 1px solid var(--app-border-soft);
   border-radius: var(--app-radius-md);
   background: rgba(255, 255, 255, 0.014);
+  break-inside: avoid;
   align-self: start;
 }
 
@@ -954,14 +958,18 @@ watch(
 }
 
 .permission-directory-grid {
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-  align-items: start;
+  display: block;
+  column-count: 2;
+  column-gap: 12px;
 }
 
 .permission-directory-card {
   gap: 10px;
+  display: inline-grid;
+  width: 100%;
   padding: 0;
+  margin: 0 0 12px;
+  break-inside: avoid;
   align-self: start;
 }
 
@@ -1093,6 +1101,7 @@ watch(
 @media (min-width: 1024px) {
   .access-main-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
   }
 }
 
@@ -1111,11 +1120,15 @@ watch(
   }
 
   .permission-section-grid,
-  .permission-directory-grid,
   .access-overview-grid,
   .access-entry-card__meta,
   .member-editor-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .permission-section-grid,
+  .permission-directory-grid {
+    column-count: 1;
   }
 
   .access-overview-card + .access-overview-card {

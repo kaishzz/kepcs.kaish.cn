@@ -69,10 +69,10 @@ const CONSOLE_PERMISSION_CATALOG = [
   }),
   createPermissionItem({
     key: "console.map_challenges.recent",
-    label: "魔怔数据 · 最近记录",
-    description: "查看和筛选最近写入的魔怔数据",
+    label: "魔怔数据 · 记录管理",
+    description: "查看和筛选全部魔怔数据记录",
     section: "控制台功能",
-    directoryPath: ["控制台功能", "魔怔数据", "最近记录"],
+    directoryPath: ["控制台功能", "魔怔数据", "记录管理"],
   }),
   createPermissionItem({
     key: "console.access.groups",
@@ -253,7 +253,7 @@ const CONSOLE_PERMISSION_CATALOG = [
   createPermissionItem({
     key: "console.map_challenges",
     label: "魔怔数据（旧兼容权限）",
-    description: "旧权限会自动展开到新增 / 更新记录和最近记录",
+    description: "旧权限会自动展开到新增 / 更新记录和记录管理",
     section: "控制台功能",
     directoryPath: ["控制台功能", "魔怔数据", "旧兼容权限"],
     grantMode: "legacy",
