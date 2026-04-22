@@ -2763,28 +2763,15 @@ onBeforeUnmount(() => {
                 <strong>{{ selectedNode.name }}</strong>
                 <span>{{ selectedNode.code }} · {{ selectedNode.host || '未填写主机地址' }}</span>
               </div>
-              <NButton secondary @click="agentPanelTab = 'nodes'">切换节点</NButton>
             </div>
 
             <section class="agent-command-section agent-command-section--flat">
-              <NForm label-placement="top" class="console-field-grid cols-3 agent-toolbar-grid">
+              <NForm label-placement="top" class="console-field-grid cols-2 agent-toolbar-grid">
                 <NFormItem label="节点">
                   <NSelect v-model:value="selectedControlNodeId" :options="controlNodeOptions" />
                 </NFormItem>
                 <NFormItem label="分组">
                   <NSelect v-model:value="selectedGroup" :options="groupOptions" />
-                </NFormItem>
-                <NFormItem label="当前勾选">
-                  <div class="selection-summary-box">
-                    <div class="selection-summary-box__label">已选服务器</div>
-                    <div class="selection-summary-box__sub">
-                      {{ selectedGroup === 'ALL' ? '全部分组' : resolveGroupLabel(selectedGroup) }}
-                    </div>
-                    <div class="selection-summary-box__main">
-                      <span class="selection-summary-box__value">{{ selectedServers.length }}</span>
-                      <span class="selection-summary-box__unit">台</span>
-                    </div>
-                  </div>
                 </NFormItem>
               </NForm>
 
@@ -2902,9 +2889,9 @@ onBeforeUnmount(() => {
                 <strong>{{ selectedNode.name }}</strong>
                 <span>{{ selectedNode.code }} · {{ selectedNode.host || '未填写主机地址' }}</span>
               </div>
-                    <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">
-                      <ConsoleRefreshIcon />
-                    </NButton>
+              <NButton secondary class="console-action-icon" title="刷新数据" @click="refreshAll()">
+                <ConsoleRefreshIcon />
+              </NButton>
             </div>
 
             <div class="agent-command-sections">
@@ -2915,7 +2902,6 @@ onBeforeUnmount(() => {
                   <section class="agent-command-section agent-command-section--flat">
                     <div class="agent-action-section__header">
                       <strong>维护命令</strong>
-                      <span>节点级维护动作会直接对当前节点执行，不再混入 RCON 操作</span>
                     </div>
                     <NForm label-placement="top" class="console-field-grid cols-2 agent-toolbar-grid">
                       <NFormItem label="节点">
@@ -2940,57 +2926,50 @@ onBeforeUnmount(() => {
                         />
                       </NFormItem>
                     </NForm>
-                    <div class="agent-command-card__summary">
-                      检查更新 / 崩溃检查 / 崩溃检查后启动都会直接使用 Agent 默认监控服。
-                    </div>
-                    <div class="agent-command-card__summary">
-                      需要“崩溃检查成功后启动”时，可以在这里多选要启动的服务器；不选则按 Agent YAML 里的自动启动配置执行。
-                    </div>
                   </section>
 
-                  <div class="agent-control-grid">
-                    <section class="agent-command-section">
-                      <div class="agent-action-section__header">
-                        <strong>基础与维护</strong>
-                        <span>把旧脚本里的维护动作收成节点级命令</span>
-                      </div>
-                      <div class="agent-action-grid">
-                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
-                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
-                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueMaintenanceCommand('node.check_update')">检查更新</NButton>
-                        <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
-                        <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
-                      </div>
-                      <div class="agent-command-card__summary">
-                        验证游戏完整性会先尝试读取当前 buildid；如果本地没有 manifest，会先打印“没有 manifest”再继续。随后会强制删除 Agent YAML 里配置的全部容器，清掉 steamapps 里的 appmanifest、downloading、temp，执行 steamcmd app_update validate，并补回 gameinfo.gi 里的 Metamod 路径。
-                      </div>
-                      <div class="agent-command-card__summary">
-                        强制清理容器只会对 Agent YAML 里配置的容器执行整批强制删除；不会读取版本，不会执行 validate，也不会删除游戏目录和挂载数据。
-                      </div>
-                    </section>
+                  <div class="agent-maintenance-layout">
+                    <div class="agent-maintenance-stack">
+                      <section class="agent-command-section">
+                        <div class="agent-action-section__header">
+                          <strong>基础与维护</strong>
+                        </div>
+                        <div class="agent-action-grid">
+                          <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('agent.ping')">心跳测试</NButton>
+                          <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('docker.list_servers')">同步容器列表</NButton>
+                          <NButton secondary class="console-button-tone--neutral-strong" @click="queueMaintenanceCommand('node.check_update')">检查更新</NButton>
+                          <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.check_validate')">验证游戏完整性</NButton>
+                          <NButton secondary class="console-button-tone--danger" @click="queueNodeInstruction('node.kill_all')">强制清理容器</NButton>
+                        </div>
+                      </section>
 
-                    <section class="agent-command-section">
+                      <section class="agent-command-section">
+                        <div class="agent-action-section__header">
+                          <strong>版本与监控</strong>
+                        </div>
+                        <div class="agent-action-grid">
+                          <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
+                          <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
+                          <NButton secondary class="console-button-tone--warning" @click="queueMaintenanceCommand('node.monitor_check')">崩溃检查</NButton>
+                          <NButton secondary class="console-button-tone--success" @click="queueMaintenanceCommand('node.monitor_start')">崩溃检查后启动</NButton>
+                        </div>
+                      </section>
+                    </div>
+
+                    <section class="agent-command-section agent-command-section--flat agent-maintenance-notes">
                       <div class="agent-action-section__header">
-                        <strong>版本与监控</strong>
-                        <span>读取版本号, 或单独执行崩溃检查与启动流程</span>
+                        <strong>说明</strong>
                       </div>
-                      <div class="agent-action-grid">
-                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_oldver')">读取当前版本</NButton>
-                        <NButton secondary class="console-button-tone--neutral-strong" @click="queueNodeInstruction('node.get_nowver')">读取最新版本</NButton>
-                        <NButton secondary class="console-button-tone--warning" @click="queueMaintenanceCommand('node.monitor_check')">崩溃检查</NButton>
-                        <NButton secondary class="console-button-tone--success" @click="queueMaintenanceCommand('node.monitor_start')">崩溃检查后启动</NButton>
-                      </div>
-                      <div class="agent-command-card__summary">
-                        读取当前版本 / 读取最新版本都不会停服；读取最新版本只会读取远端 buildid。
-                      </div>
-                      <div class="agent-command-card__summary">
-                        检查更新会先尝试读取本地 buildid；如果本地没有 manifest，会先打印“没有 manifest”并直接进入“删容器 -> 清理 steamapps -> steamcmd validate -> 崩溃检查”的完整流程。只有本地 manifest 存在时，才会继续读取远端 buildid 并按版本差异决定是否停服。
-                      </div>
-                      <div class="agent-command-card__summary">
-                        崩溃检查会先强制删除默认监控服容器，再重新创建并启动它；随后持续轮询容器状态和 RestartCount，在稳定运行达到阈值前只要频繁重启或长时间没恢复，就会判定失败并清掉监控容器。
-                      </div>
-                      <div class="agent-command-card__summary">
-                        崩溃检查后启动会先完整执行一遍崩溃检查；只有监控服稳定通过后，才启动你这里勾选的服务器。不勾选时会按 Agent YAML 里 start_after_monitor 的配置自动启动；如果都没配，就默认启动除监控服外的其它服。
+                      <div class="agent-maintenance-note-list">
+                        <div class="agent-command-card__summary">
+                          检查更新不会进行停服检查, 只有对比到版本差异才会进行更新。
+                        </div>
+                        <div class="agent-command-card__summary">
+                          验证游戏完整性会自动停服进行修复。
+                        </div>
+                        <div class="agent-command-card__summary">
+                          崩溃检查会自动重新创建容器进行判断一段时间内是否崩溃。
+                        </div>
                       </div>
                     </section>
                   </div>
@@ -3883,7 +3862,10 @@ onBeforeUnmount(() => {
 }
 
 .agent-control-grid,
-.agent-toolbar-grid {
+.agent-toolbar-grid,
+.agent-maintenance-layout,
+.agent-maintenance-stack,
+.agent-maintenance-note-list {
   display: grid;
   gap: 14px;
 }
@@ -4157,6 +4139,10 @@ onBeforeUnmount(() => {
 .agent-action-section {
   display: grid;
   gap: 14px;
+}
+
+.agent-maintenance-notes {
+  align-content: start;
 }
 
 .agent-control-stack > .agent-action-section {
@@ -4436,6 +4422,11 @@ onBeforeUnmount(() => {
 
   .agent-control-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .agent-maintenance-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
     align-items: start;
   }
 
