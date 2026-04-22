@@ -1956,7 +1956,7 @@ function queueServerAction(commandType: Extract<NodeActionType, 'docker.start_se
     },
     {
       closeOnConfirm: true,
-      backgroundNotice: `已转入后台下发 ${servers.length} 条命令，可继续操作其他内容。`,
+      backgroundNotice: `已下发 ${servers.length} 条命令`,
     },
   )
 }
