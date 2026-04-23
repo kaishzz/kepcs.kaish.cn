@@ -1,6 +1,24 @@
 const INTERNAL_NODE_PAYLOAD_META_KEY = "__kepcsMeta";
 const { normalizeNodeScheduleConfig } = require("./nodeScheduleConfig");
 
+const NOTIFICATION_QUEUE_MODES = Object.freeze([
+  "always",
+  "never",
+]);
+
+const NOTIFICATION_FINISH_MODES = Object.freeze([
+  "always",
+  "failure_only",
+  "success_only",
+  "updated_only",
+  "updated_or_failed",
+]);
+
+const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
+  queued: "always",
+  finished: "always",
+});
+
 function sanitizeJsonRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -30,6 +48,25 @@ function normalizeNotificationChannelKeys(values) {
   );
 }
 
+function normalizeNotificationSettings(value) {
+  const safeValue =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+
+  const queued = NOTIFICATION_QUEUE_MODES.includes(safeValue.queued)
+    ? safeValue.queued
+    : DEFAULT_NOTIFICATION_SETTINGS.queued;
+  const finished = NOTIFICATION_FINISH_MODES.includes(safeValue.finished)
+    ? safeValue.finished
+    : DEFAULT_NOTIFICATION_SETTINGS.finished;
+
+  return {
+    queued,
+    finished,
+  };
+}
+
 function normalizeNodePayloadMeta(value) {
   const meta =
     value && typeof value === "object" && !Array.isArray(value)
@@ -38,8 +75,10 @@ function normalizeNodePayloadMeta(value) {
 
   return {
     notificationChannelKeys: normalizeNotificationChannelKeys(meta.notificationChannelKeys),
+    notificationSettings: normalizeNotificationSettings(meta.notificationSettings),
     sourceScheduleId: normalizeString(meta.sourceScheduleId, 191) || null,
     sourceScheduleName: normalizeString(meta.sourceScheduleName, 64) || null,
+    sourceScheduleSummary: normalizeString(meta.sourceScheduleSummary, 191) || null,
     scheduleConfig: meta.scheduleConfig ? normalizeNodeScheduleConfig(meta.scheduleConfig) : null,
   };
 }
@@ -63,10 +102,6 @@ function normalizeNodeCommandServerKeys(values) {
         .filter(Boolean),
     ),
   );
-}
-
-function normalizeNodeCommandMonitorServerKey(value) {
-  return normalizeString(value, 64) || null;
 }
 
 function sanitizeNodeCommandTargets(targets) {
@@ -102,15 +137,6 @@ function sanitizeNodeCommandPayload(payload) {
     }
   }
 
-  if (Object.prototype.hasOwnProperty.call(safePayload, "monitorServerKey")) {
-    const monitorServerKey = normalizeNodeCommandMonitorServerKey(safePayload.monitorServerKey);
-    if (monitorServerKey) {
-      safePayload.monitorServerKey = monitorServerKey;
-    } else {
-      delete safePayload.monitorServerKey;
-    }
-  }
-
   if (Array.isArray(safePayload.targets)) {
     const sanitizedTargets = sanitizeNodeCommandTargets(safePayload.targets);
 
@@ -136,11 +162,16 @@ function sanitizeNodeCommandPayload(payload) {
 function attachNodePayloadMeta(payload, meta) {
   const cleanPayload = stripNodePayloadMeta(payload);
   const normalizedMeta = normalizeNodePayloadMeta(meta);
+  const hasNonDefaultNotificationSettings =
+    normalizedMeta.notificationSettings.queued !== DEFAULT_NOTIFICATION_SETTINGS.queued
+    || normalizedMeta.notificationSettings.finished !== DEFAULT_NOTIFICATION_SETTINGS.finished;
 
   if (
     !normalizedMeta.notificationChannelKeys.length
+    && !hasNonDefaultNotificationSettings
     && !normalizedMeta.sourceScheduleId
     && !normalizedMeta.sourceScheduleName
+    && !normalizedMeta.sourceScheduleSummary
     && !normalizedMeta.scheduleConfig
   ) {
     return cleanPayload;
@@ -153,11 +184,14 @@ function attachNodePayloadMeta(payload, meta) {
 }
 
 module.exports = {
+  DEFAULT_NOTIFICATION_SETTINGS,
   INTERNAL_NODE_PAYLOAD_META_KEY,
+  NOTIFICATION_FINISH_MODES,
+  NOTIFICATION_QUEUE_MODES,
   attachNodePayloadMeta,
   extractNodePayloadMeta,
   normalizeNotificationChannelKeys,
-  normalizeNodeCommandMonitorServerKey,
+  normalizeNotificationSettings,
   normalizeNodeCommandServerKeys,
   sanitizeNodeCommandPayload,
   stripNodePayloadMeta,

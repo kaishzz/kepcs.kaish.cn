@@ -417,9 +417,6 @@ export interface NodeCommandItem {
   expiresAt?: string | null
   result?: unknown
   errorMessage?: string | null
-  notificationChannelKeys?: string[]
-  sourceScheduleId?: string | null
-  sourceScheduleName?: string | null
   createdAt: string
   updatedAt: string
   node?: ManagedNodeItem
@@ -446,6 +443,11 @@ export interface NodeScheduleConfig {
   timezone?: string
 }
 
+export interface NodeNotificationSettings {
+  queued: 'always' | 'never'
+  finished: 'always' | 'failure_only' | 'success_only' | 'updated_only' | 'updated_or_failed'
+}
+
 export interface NodeCommandScheduleItem {
   id: string
   nodeId: string
@@ -453,6 +455,7 @@ export interface NodeCommandScheduleItem {
   commandType: string
   payload: Record<string, unknown>
   notificationChannelKeys?: string[]
+  notificationSettings?: NodeNotificationSettings
   intervalMinutes: number
   scheduleConfig?: NodeScheduleConfig | null
   scheduleSummary?: string
@@ -474,6 +477,16 @@ export interface GotifyChannelItem {
   description?: string
   enabled: boolean
   priority: number
+  templates: {
+    queued: {
+      title: string
+      message: string
+    }
+    finished: {
+      title: string
+      message: string
+    }
+  }
 }
 
 export interface GotifyConfig {

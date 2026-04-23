@@ -3,7 +3,6 @@ const { cdkPrisma } = require("../lib/prisma");
 const { notifyScheduledCommandFinished } = require("./gotifyNotificationService");
 const { extractAgentApiKey, generateAgentApiKey, hashAgentApiKey } = require("../utils/agentAuth");
 const {
-  extractNodePayloadMeta,
   sanitizeNodeCommandPayload,
   stripNodePayloadMeta,
 } = require("../utils/nodeCommandPayloadMeta");
@@ -135,7 +134,6 @@ function serializeNodeCommand(row, options = {}) {
   }
 
   const includeSecrets = Boolean(options.includeSecrets);
-  const meta = extractNodePayloadMeta(row.payload);
 
   return {
     id: row.id,
@@ -153,9 +151,6 @@ function serializeNodeCommand(row, options = {}) {
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
     result: row.result || null,
     errorMessage: row.errorMessage || null,
-    notificationChannelKeys: meta.notificationChannelKeys,
-    sourceScheduleId: meta.sourceScheduleId,
-    sourceScheduleName: meta.sourceScheduleName,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     node: row.node ? serializeManagedNode(row.node) : undefined,

@@ -21,6 +21,7 @@ import ConsoleSegmentedTabs from './ConsoleSegmentedTabs.vue'
 import type { GotifyChannelItem, GotifyConfig } from '../../types'
 
 type NotificationSubTab = 'create' | 'manage' | 'test'
+type TemplateEventType = 'queued' | 'finished'
 
 interface GotifyChannelFormItem extends GotifyChannelItem {
   localId: string
@@ -42,6 +43,7 @@ const saving = ref(false)
 const testing = ref(false)
 const testingKeys = ref<string[]>([])
 const notificationSubTab = ref<NotificationSubTab>('create')
+const templatePreviewEvent = ref<TemplateEventType>('finished')
 const manageSelectionKeys = ref<string[]>([])
 const expandedManageChannelIds = ref<string[]>([])
 const form = ref<{ channels: GotifyChannelFormItem[] }>({
@@ -54,6 +56,22 @@ const testForm = ref({
   message: '测试文本',
   priority: 5,
 })
+
+const templateVariableRows = [
+  { key: '{{ scheduleName }}', label: '任务名称', description: '定时任务名称，常用于标题。' },
+  { key: '{{ scheduleSummary }}', label: '执行规则', description: '例如每 1 小时 00:00 - 23:59。' },
+  { key: '{{ nodeName }}', label: '节点名称', description: '节点显示名称。' },
+  { key: '{{ commandId }}', label: '命令 ID', description: '每次调度创建的命令唯一标识。' },
+  { key: '{{ commandType }}', label: '命令类型', description: '例如 node.check_update。' },
+  { key: '{{ commandStatus }}', label: '命令状态', description: '完成通知里可用，如 SUCCEEDED / FAILED。' },
+  { key: '{{ resultMessage }}', label: '结果摘要', description: 'Agent 回传的 message 字段。' },
+  { key: '{{ updated }}', label: '是否有更新', description: '检查更新 / validate 结果里的 updated 布尔值。' },
+  { key: '{{ currentBuildId }}', label: '当前版本', description: '当前或更新后的 buildid。' },
+  { key: '{{ latestBuildId }}', label: '最新版本', description: '远端最新 buildid。' },
+  { key: '{{ errorMessage }}', label: '错误信息', description: '失败、取消或过期时的错误摘要。' },
+  { key: '{{ payloadJson }}', label: '命令参数', description: '当前任务 payload 的 JSON 摘要。' },
+  { key: '{{ resultJson }}', label: '执行结果', description: '命令结果 JSON 摘要。' },
+]
 
 const canCreate = computed(() => props.canCreate !== false)
 const canManage = computed(() => props.canManage !== false)
@@ -111,6 +129,111 @@ const previewChannel = computed(() => {
     || null
 })
 
+function stringifyTemplateValue(value: unknown) {
+  if (value == null) {
+    return ''
+  }
+
+  if (typeof value === 'string') {
+    return value
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function resolveTemplatePath(context: Record<string, unknown>, path: string) {
+  const segments = String(path || '')
+    .split('.')
+    .map(segment => segment.trim())
+    .filter(Boolean)
+
+  let current: unknown = context
+  for (const segment of segments) {
+    if (current == null || typeof current !== 'object') {
+      return ''
+    }
+
+    current = (current as Record<string, unknown>)[segment]
+  }
+
+  return stringifyTemplateValue(current)
+}
+
+function renderTemplate(template: string, context: Record<string, unknown>) {
+  return String(template || '').replace(/{{\s*([a-zA-Z0-9_.-]+)\s*}}/g, (_match, key) =>
+    resolveTemplatePath(context, key),
+  )
+}
+
+function createTemplatePreviewContext(channel: GotifyChannelFormItem | null, event: TemplateEventType) {
+  const result = {
+    updated: event === 'finished',
+    currentBuildId: '22880072',
+    latestBuildId: '22890001',
+    message: event === 'finished'
+      ? 'Validated and updated to buildid 22890001'
+      : 'Waiting for execution',
+  }
+
+  return {
+    event,
+    channel: {
+      key: channel?.key || 'ops-main',
+      name: channel?.name || '运维主群',
+    },
+    schedule: {
+      name: '每小时检查更新',
+      summary: '每 1 小时 00:00 - 23:59',
+    },
+    node: {
+      name: '华东节点',
+      code: 'node-east-1',
+    },
+    command: {
+      id: 'command-preview-001',
+      type: 'node.check_update',
+      status: event === 'finished' ? 'SUCCEEDED' : 'PENDING',
+    },
+    result,
+    scheduleName: '每小时检查更新',
+    scheduleSummary: '每 1 小时 00:00 - 23:59',
+    nodeName: '华东节点',
+    nodeCode: 'node-east-1',
+    commandId: 'command-preview-001',
+    commandType: 'node.check_update',
+    commandStatus: event === 'finished' ? 'SUCCEEDED' : 'PENDING',
+    resultMessage: event === 'finished' ? 'Already latest version, skipped validate and monitor' : '',
+    updated: event === 'finished',
+    currentBuildId: event === 'finished' ? '22880072' : '',
+    latestBuildId: event === 'finished' ? '22890001' : '',
+    errorMessage: event === 'finished' ? '' : '',
+    payloadJson: JSON.stringify({ startServerKeys: ['ze_xl_1', 'ze_pt_1'] }, null, 2),
+    resultJson: JSON.stringify(result, null, 2),
+  }
+}
+
+const renderedTemplatePreview = computed(() => {
+  const channel = previewChannel.value
+  const event = templatePreviewEvent.value
+  const context = createTemplatePreviewContext(channel, event)
+  const templates = channel?.templates || createEmptyTemplates()
+  const titleTemplate = templates[event]?.title || ''
+  const messageTemplate = templates[event]?.message || ''
+
+  return {
+    title: titleTemplate ? renderTemplate(titleTemplate, context) : '',
+    message: messageTemplate ? renderTemplate(messageTemplate, context) : '',
+  }
+})
+
 const gotifyPayloadPreview = computed(() =>
   JSON.stringify({
     title: testForm.value.title.trim() || 'KepCs',
@@ -119,11 +242,25 @@ const gotifyPayloadPreview = computed(() =>
   }, null, 2),
 )
 
+function createEmptyTemplates() {
+  return {
+    queued: {
+      title: '',
+      message: '',
+    },
+    finished: {
+      title: '',
+      message: '',
+    },
+  }
+}
+
 function createLocalId() {
   return `gotify-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`
 }
 
 function toChannelFormItem(channel?: Partial<GotifyChannelItem>): GotifyChannelFormItem {
+  const emptyTemplates = createEmptyTemplates()
   return {
     localId: createLocalId(),
     key: channel?.key || '',
@@ -133,6 +270,16 @@ function toChannelFormItem(channel?: Partial<GotifyChannelItem>): GotifyChannelF
     description: channel?.description || '',
     enabled: channel?.enabled !== false,
     priority: Number.isFinite(Number(channel?.priority)) ? Number(channel?.priority) : 5,
+    templates: {
+      queued: {
+        title: channel?.templates?.queued?.title || emptyTemplates.queued.title,
+        message: channel?.templates?.queued?.message || emptyTemplates.queued.message,
+      },
+      finished: {
+        title: channel?.templates?.finished?.title || emptyTemplates.finished.title,
+        message: channel?.templates?.finished?.message || emptyTemplates.finished.message,
+      },
+    },
   }
 }
 
@@ -201,6 +348,16 @@ function buildConfigPayload() {
       description: channel.description?.trim() || undefined,
       enabled: channel.enabled,
       priority: channel.priority,
+      templates: {
+        queued: {
+          title: channel.templates?.queued?.title?.trim() || undefined,
+          message: channel.templates?.queued?.message?.trim() || undefined,
+        },
+        finished: {
+          title: channel.templates?.finished?.title?.trim() || undefined,
+          message: channel.templates?.finished?.message?.trim() || undefined,
+        },
+      },
     })),
   }
 }
@@ -251,6 +408,16 @@ function normalizeDraftChannel() {
     serverUrl: channelDraft.value.serverUrl.trim(),
     token: channelDraft.value.token?.trim() || '',
     description: channelDraft.value.description?.trim() || '',
+    templates: {
+      queued: {
+        title: channelDraft.value.templates?.queued?.title?.trim() || '',
+        message: channelDraft.value.templates?.queued?.message?.trim() || '',
+      },
+      finished: {
+        title: channelDraft.value.templates?.finished?.title?.trim() || '',
+        message: channelDraft.value.templates?.finished?.message?.trim() || '',
+      },
+    },
   }
 
   if (!draft.name) {
@@ -501,6 +668,20 @@ watch(
 
       <Transition v-else name="console-panel-switch" mode="out-in">
         <div :key="notificationSubTab" class="gotify-panel__body">
+          <section class="gotify-helper-card">
+            <div class="gotify-helper-card__header">
+              <strong>模板变量</strong>
+              <span>渠道模板支持 `&#123;&#123; 变量名 &#125;&#125;` 和 `&#123;&#123; result.message &#125;&#125;` 这种点路径；留空时会回退到系统默认文案。</span>
+            </div>
+
+            <div class="gotify-template-list">
+              <div v-for="item in templateVariableRows" :key="item.key" class="gotify-template-item">
+                <strong>{{ item.key }}</strong>
+                <span>{{ item.label }} · {{ item.description }}</span>
+              </div>
+            </div>
+          </section>
+
           <template v-if="notificationSubTab === 'create' && canCreate">
             <section class="gotify-helper-card">
               <div class="gotify-helper-card__header">
@@ -526,6 +707,28 @@ watch(
                 </NFormItem>
                 <NFormItem label="渠道说明" class="col-span-full">
                   <NInput v-model:value="channelDraft.description" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="比如：更新通知 / 重启通知 / 失败告警" />
+                </NFormItem>
+                <NFormItem label="触发通知标题模板">
+                  <NInput v-model:value="channelDraft.templates.queued.title" placeholder="例如：定时任务已触发 · {{ scheduleName }}" />
+                </NFormItem>
+                <NFormItem label="完成通知标题模板">
+                  <NInput v-model:value="channelDraft.templates.finished.title" placeholder="例如：{{ updated }} · {{ scheduleName }}" />
+                </NFormItem>
+                <NFormItem label="触发通知正文模板" class="col-span-full">
+                  <NInput
+                    v-model:value="channelDraft.templates.queued.message"
+                    type="textarea"
+                    :autosize="{ minRows: 3, maxRows: 6 }"
+                    placeholder="例如：节点: {{ nodeName }}&#10;规则: {{ scheduleSummary }}&#10;命令 ID: {{ commandId }}"
+                  />
+                </NFormItem>
+                <NFormItem label="完成通知正文模板" class="col-span-full">
+                  <NInput
+                    v-model:value="channelDraft.templates.finished.message"
+                    type="textarea"
+                    :autosize="{ minRows: 4, maxRows: 8 }"
+                    placeholder="例如：状态: {{ commandStatus }}&#10;结果: {{ resultMessage }}&#10;版本: {{ currentBuildId }} -> {{ latestBuildId }}"
+                  />
                 </NFormItem>
                 <NFormItem label="启用状态">
                   <NSwitch v-model:value="channelDraft.enabled" />
@@ -629,6 +832,28 @@ watch(
                         <NFormItem label="渠道说明" class="col-span-full">
                           <NInput v-model:value="channel.description" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="比如：更新通知 / 重启通知 / 失败告警" />
                         </NFormItem>
+                        <NFormItem label="触发通知标题模板">
+                          <NInput v-model:value="channel.templates.queued.title" placeholder="例如：定时任务已触发 · {{ scheduleName }}" />
+                        </NFormItem>
+                        <NFormItem label="完成通知标题模板">
+                          <NInput v-model:value="channel.templates.finished.title" placeholder="例如：{{ commandStatus }} · {{ scheduleName }}" />
+                        </NFormItem>
+                        <NFormItem label="触发通知正文模板" class="col-span-full">
+                          <NInput
+                            v-model:value="channel.templates.queued.message"
+                            type="textarea"
+                            :autosize="{ minRows: 3, maxRows: 6 }"
+                            placeholder="例如：节点: {{ nodeName }}&#10;规则: {{ scheduleSummary }}&#10;命令 ID: {{ commandId }}"
+                          />
+                        </NFormItem>
+                        <NFormItem label="完成通知正文模板" class="col-span-full">
+                          <NInput
+                            v-model:value="channel.templates.finished.message"
+                            type="textarea"
+                            :autosize="{ minRows: 4, maxRows: 8 }"
+                            placeholder="例如：状态: {{ commandStatus }}&#10;结果: {{ resultMessage }}&#10;版本: {{ currentBuildId }} -> {{ latestBuildId }}"
+                          />
+                        </NFormItem>
                         <NFormItem label="启用状态">
                           <NSwitch v-model:value="channel.enabled" />
                         </NFormItem>
@@ -716,6 +941,45 @@ watch(
                   <pre class="gotify-format-card__payload">{{ gotifyPayloadPreview }}</pre>
                 </div>
               </section>
+
+              <section class="gotify-helper-card">
+                <div class="gotify-helper-card__header">
+                  <strong>模板预览</strong>
+                  <span>下面会用模拟的调度数据预览当前渠道模板，不会真实发送消息。</span>
+                </div>
+
+                <NForm label-placement="top" class="console-field-grid cols-2">
+                  <NFormItem label="预览事件">
+                    <NSelect
+                      v-model:value="templatePreviewEvent"
+                      :options="[
+                        { label: '任务触发', value: 'queued' },
+                        { label: '任务完成', value: 'finished' },
+                      ]"
+                    />
+                  </NFormItem>
+                  <NFormItem label="预览渠道">
+                    <div class="gotify-summary-box">
+                      <strong>{{ previewChannel?.name || '未选择渠道' }}</strong>
+                      <span>{{ previewChannel?.key || '请先选择测试渠道' }}</span>
+                    </div>
+                  </NFormItem>
+                </NForm>
+
+                <div class="gotify-format-card">
+                  <div class="gotify-format-card__endpoint">
+                    标题预览
+                  </div>
+                  <pre class="gotify-format-card__payload">{{ renderedTemplatePreview.title || '当前事件未配置标题模板，将使用系统默认标题。' }}</pre>
+                </div>
+
+                <div class="gotify-format-card">
+                  <div class="gotify-format-card__endpoint">
+                    正文预览
+                  </div>
+                  <pre class="gotify-format-card__payload">{{ renderedTemplatePreview.message || '当前事件未配置正文模板，将使用系统默认正文。' }}</pre>
+                </div>
+              </section>
             </div>
 
             <div v-else class="hero-note min-h-[220px]">
@@ -799,6 +1063,32 @@ watch(
 .gotify-summary-box span {
   font-size: 12px;
   color: var(--app-text-muted);
+}
+
+.gotify-template-list {
+  display: grid;
+  gap: 10px;
+}
+
+.gotify-template-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--app-radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gotify-template-item strong {
+  font-size: 12px;
+  color: #dfe9f6;
+  font-family: var(--app-font-number);
+}
+
+.gotify-template-item span {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  line-height: 1.7;
 }
 
 .gotify-format-card {

@@ -52,6 +52,7 @@ function serializeNodeSchedule(row) {
     commandType: row.commandType,
     payload: stripNodePayloadMeta(row.payload),
     notificationChannelKeys: meta.notificationChannelKeys,
+    notificationSettings: meta.notificationSettings,
     intervalMinutes: row.intervalMinutes,
     scheduleConfig,
     scheduleSummary: describeNodeScheduleConfig(scheduleConfig),
@@ -154,6 +155,7 @@ async function createNodeSchedule(payload) {
         sanitizedPayload,
         {
           notificationChannelKeys: payload.notificationChannelKeys,
+          notificationSettings: payload.notificationSettings,
           scheduleConfig: scheduleTiming.scheduleConfig,
         },
       ),
@@ -174,6 +176,7 @@ async function updateNodeSchedule(id, payload) {
   const shouldUpdatePayload =
     hasOwn(payload, "payload")
     || hasOwn(payload, "notificationChannelKeys")
+    || hasOwn(payload, "notificationSettings")
     || hasOwn(payload, "scheduleConfig")
     || hasOwn(payload, "intervalMinutes")
     || hasOwn(payload, "nextRunAt");
@@ -209,6 +212,9 @@ async function updateNodeSchedule(id, payload) {
       notificationChannelKeys: hasOwn(payload, "notificationChannelKeys")
         ? payload.notificationChannelKeys
         : currentMeta.notificationChannelKeys,
+      notificationSettings: hasOwn(payload, "notificationSettings")
+        ? payload.notificationSettings
+        : currentMeta.notificationSettings,
       scheduleConfig: scheduleTiming.scheduleConfig,
     });
   } else if (shouldUpdateTiming) {
@@ -304,8 +310,15 @@ async function queueScheduleRun(scheduleRow) {
       sanitizeNodeCommandPayload(stripNodePayloadMeta(scheduleRow.payload)),
       {
         notificationChannelKeys: scheduleMeta.notificationChannelKeys,
+        notificationSettings: scheduleMeta.notificationSettings,
         sourceScheduleId: scheduleRow.id,
         sourceScheduleName: scheduleRow.name,
+        sourceScheduleSummary: describeNodeScheduleConfig(
+          normalizeNodeScheduleConfig(scheduleMeta.scheduleConfig, {
+            intervalMinutes: scheduleRow.intervalMinutes,
+            nextRunAt: scheduleRow.nextRunAt,
+          }),
+        ),
       },
     ),
     expiresInSeconds: 900,

@@ -103,7 +103,12 @@ const {
 } = require("./services/gotifyNotificationService");
 const { batchDeleteCdks, batchUpdateCdks, createCdks, deleteCdkAdmin, listAllCdks, listUserCdks, redeemCdk, transferCdk, updateCdkAdmin } = require("./services/cdkService");
 const { buildSteamLoginUrl, extractSteamIdFromClaimedId, verifySteamCallback } = require("./utils/steamOpenId");
-const { normalizeNodeCommandServerKeys, sanitizeNodeCommandPayload } = require("./utils/nodeCommandPayloadMeta");
+const {
+  NOTIFICATION_FINISH_MODES,
+  NOTIFICATION_QUEUE_MODES,
+  normalizeNodeCommandServerKeys,
+  sanitizeNodeCommandPayload,
+} = require("./utils/nodeCommandPayloadMeta");
 
 const publicDir = path.join(process.cwd(), "public");
 const webDistDir = path.join(process.cwd(), "dist", "web");
@@ -661,12 +666,28 @@ const nodeScheduleQuerySchema = z.object({
   }, z.boolean().optional()),
 });
 
+const nodeNotificationSettingsSchema = z.object({
+  queued: z.enum(NOTIFICATION_QUEUE_MODES).optional().default("always"),
+  finished: z.enum(NOTIFICATION_FINISH_MODES).optional().default("always"),
+});
+
+const gotifyTemplateEventSchema = z.object({
+  title: z.string().trim().max(320, "通知标题模板不能超过 320 个字符").optional().default(""),
+  message: z.string().trim().max(12000, "通知正文模板不能超过 12000 个字符").optional().default(""),
+});
+
+const gotifyTemplatesSchema = z.object({
+  queued: gotifyTemplateEventSchema.optional().default({}),
+  finished: gotifyTemplateEventSchema.optional().default({}),
+});
+
 const nodeScheduleCreateSchema = z.object({
   nodeId: z.string().trim().min(1, "节点不能为空"),
   name: z.string().trim().min(1, "任务名称不能为空").max(64, "任务名称不能超过 64 个字符"),
   commandType: z.string().trim().min(1, "命令类型不能为空").max(64, "命令类型过长").regex(/^[a-z0-9._:-]+$/i, "命令类型格式不正确"),
   payload: jsonRecordSchema.optional().default({}),
   notificationChannelKeys: z.array(z.string().trim().min(1).max(64)).max(16, "通知渠道不能超过 16 个").optional().default([]),
+  notificationSettings: nodeNotificationSettingsSchema.optional().default({}),
   scheduleConfig: z.object({
     type: z.enum(["interval_minutes", "daily", "every_n_days", "every_n_hours"]),
     intervalMinutes: z.coerce.number().int().min(1, "执行间隔至少 1 分钟").max(10080, "执行间隔不能超过 10080 分钟").optional(),
@@ -755,6 +776,7 @@ const nodeScheduleUpdateSchema = z.object({
   commandType: z.string().trim().min(1, "命令类型不能为空").max(64, "命令类型过长").regex(/^[a-z0-9._:-]+$/i, "命令类型格式不正确").optional(),
   payload: jsonRecordSchema.optional(),
   notificationChannelKeys: z.array(z.string().trim().min(1).max(64)).max(16, "通知渠道不能超过 16 个").optional(),
+  notificationSettings: nodeNotificationSettingsSchema.optional(),
   scheduleConfig: z.object({
     type: z.enum(["interval_minutes", "daily", "every_n_days", "every_n_hours"]),
     intervalMinutes: z.coerce.number().int().min(1, "执行间隔至少 1 分钟").max(10080, "执行间隔不能超过 10080 分钟").optional(),
@@ -846,6 +868,7 @@ const gotifyChannelSchema = z.object({
   description: z.string().trim().max(300, "渠道说明不能超过 300 个字符").optional(),
   enabled: z.coerce.boolean().optional().default(true),
   priority: z.coerce.number().int().min(0, "优先级不能小于 0").max(10, "优先级不能超过 10").optional().default(5),
+  templates: gotifyTemplatesSchema.optional().default({}),
 });
 
 const gotifyConfigUpdateSchema = z.object({

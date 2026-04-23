@@ -33,6 +33,7 @@ import type {
   ManagedNodeItem,
   NodeCommandItem,
   NodeCommandLogItem,
+  NodeNotificationSettings,
   NodeScheduleConfig,
   NodeCommandScheduleItem,
   NodeCommandStatus,
@@ -75,6 +76,8 @@ type NodeFormMode = 'create' | 'edit'
 type CommandStatusFilter = 'ALL' | NodeCommandStatus
 type RconTargetMode = 'group' | 'servers'
 type ScheduleMode = 'interval_minutes' | 'daily' | 'every_n_days' | 'every_n_hours'
+type ScheduleQueuedNotificationMode = NodeNotificationSettings['queued']
+type ScheduleFinishedNotificationMode = NodeNotificationSettings['finished']
 interface CommandGroupResultRow extends Record<string, unknown> {
   changed?: boolean
   message?: string
@@ -119,7 +122,8 @@ interface ScheduleFormState {
   scheduleWindowEnd: string
   isActive: boolean
   notificationChannelKeys: string[]
-  monitorServerKey: string
+  notificationQueuedMode: ScheduleQueuedNotificationMode
+  notificationFinishedMode: ScheduleFinishedNotificationMode
   startServerKeys: string[]
   rconGroup: string
   rconCommand: string
@@ -172,7 +176,6 @@ const nodeCommandForm = ref({
 })
 
 const maintenanceCommandForm = ref({
-  monitorServerKey: '',
   startServerKeys: [] as string[],
 })
 
@@ -280,6 +283,19 @@ const scheduleModeOptions = [
   { label: '每天固定时间', value: 'daily' },
   { label: '每 N 天固定时间', value: 'every_n_days' },
   { label: '每 N 小时按时间窗', value: 'every_n_hours' },
+]
+
+const scheduleQueuedNotificationModeOptions = [
+  { label: '触发时发送', value: 'always' as const },
+  { label: '触发时不发', value: 'never' as const },
+]
+
+const scheduleFinishedNotificationModeOptions = [
+  { label: '完成后总是发送', value: 'always' as const },
+  { label: '仅失败时发送', value: 'failure_only' as const },
+  { label: '仅成功时发送', value: 'success_only' as const },
+  { label: '仅检测到更新时发送', value: 'updated_only' as const },
+  { label: '仅更新或失败时发送', value: 'updated_or_failed' as const },
 ]
 
 const canViewNodesTab = computed(() => props.canViewNodeList || props.canManageNodes)
@@ -531,7 +547,64 @@ function normalizeScheduleTime(value: string, label: string) {
   return safeValue
 }
 
+function defaultNotificationSettingsForCommand(commandType: string): NodeNotificationSettings {
+  if (commandType === 'node.check_update') {
+    return {
+      queued: 'never',
+      finished: 'updated_or_failed',
+    }
+  }
+
+  return {
+    queued: 'never',
+    finished: 'always',
+  }
+}
+
+function normalizeScheduleNotificationSettings(
+  settings: Partial<NodeNotificationSettings> | null | undefined,
+  commandType: string,
+): NodeNotificationSettings {
+  const defaults = defaultNotificationSettingsForCommand(commandType)
+  const queued = settings?.queued === 'always' || settings?.queued === 'never'
+    ? settings.queued
+    : defaults.queued
+  const finished = scheduleFinishedNotificationModeOptions.some((option) => option.value === settings?.finished)
+    ? settings?.finished as ScheduleFinishedNotificationMode
+    : defaults.finished
+
+  return {
+    queued,
+    finished,
+  }
+}
+
+function buildScheduleNotificationSettings(form: ScheduleFormState): NodeNotificationSettings {
+  return {
+    queued: form.notificationQueuedMode,
+    finished: form.notificationFinishedMode,
+  }
+}
+
+function describeQueuedNotificationMode(mode: ScheduleQueuedNotificationMode) {
+  return mode === 'always' ? '触发时发送' : '触发时不发'
+}
+
+function describeFinishedNotificationMode(mode: ScheduleFinishedNotificationMode) {
+  if (mode === 'failure_only') return '仅失败时发送'
+  if (mode === 'success_only') return '仅成功时发送'
+  if (mode === 'updated_only') return '仅检测到更新时发送'
+  if (mode === 'updated_or_failed') return '仅更新或失败时发送'
+  return '完成后总是发送'
+}
+
+function describeNotificationSettings(settings: Partial<NodeNotificationSettings> | null | undefined, commandType: string) {
+  const normalized = normalizeScheduleNotificationSettings(settings, commandType)
+  return `${describeQueuedNotificationMode(normalized.queued)} / ${describeFinishedNotificationMode(normalized.finished)}`
+}
+
 function createScheduleForm(nodeId = selectedScheduleNodeId.value || selectedControlNodeId.value || nodes.value[0]?.id || ''): ScheduleFormState {
+  const notificationSettings = defaultNotificationSettingsForCommand('node.check_update')
   return {
     id: '',
     name: '',
@@ -547,7 +620,8 @@ function createScheduleForm(nodeId = selectedScheduleNodeId.value || selectedCon
     scheduleWindowEnd: '23:59',
     isActive: true,
     notificationChannelKeys: [],
-    monitorServerKey: '',
+    notificationQueuedMode: notificationSettings.queued,
+    notificationFinishedMode: notificationSettings.finished,
     startServerKeys: [],
     rconGroup: 'ALL',
     rconCommand: '',
@@ -682,6 +756,32 @@ const scheduleFormSummary = computed(() => {
   }
 })
 
+const scheduleNotificationSummary = computed(() =>
+  describeNotificationSettings(buildScheduleNotificationSettings(scheduleForm.value), scheduleForm.value.commandType),
+)
+
+const scheduleNotificationHint = computed(() => {
+  if (!scheduleForm.value.notificationChannelKeys.length) {
+    return '未选择通知渠道时，不会推送 Gotify。'
+  }
+
+  if (
+    scheduleForm.value.commandType === 'node.check_update'
+    && scheduleForm.value.notificationFinishedMode === 'updated_or_failed'
+  ) {
+    return '检查更新只有在检测到版本变化或执行失败时才会发送完成通知。'
+  }
+
+  if (
+    scheduleForm.value.commandType === 'node.check_update'
+    && scheduleForm.value.notificationFinishedMode === 'updated_only'
+  ) {
+    return '检查更新只有在检测到版本变化时才会发送完成通知，失败也不会推送。'
+  }
+
+  return '通知规则会在所选 Gotify 渠道上统一生效。'
+})
+
 function nodeStatusType(status?: ManagedNodeItem['status']) {
   if (status === 'ONLINE') return 'success'
   if (status === 'DISABLED') return 'warning'
@@ -797,12 +897,6 @@ function serverImageText(server: ManagedNodeHeartbeatServerItem) {
   return String(image || '-')
 }
 
-const monitorSelectionCommandTypes = [
-  'node.check_update',
-  'node.monitor_check',
-  'node.monitor_start',
-] as const
-
 const startSelectionCommandTypes = [
   'node.check_update',
   'node.monitor_start',
@@ -838,17 +932,8 @@ function buildServerSelectOptions(servers: ManagedNodeHeartbeatServerItem[]) {
   }))
 }
 
-function commandSupportsMonitorServer(commandType: string) {
-  return monitorSelectionCommandTypes.includes(commandType as typeof monitorSelectionCommandTypes[number])
-}
-
 function commandSupportsStartTargets(commandType: string) {
   return startSelectionCommandTypes.includes(commandType as typeof startSelectionCommandTypes[number])
-}
-
-function normalizeOptionalServerKey(value: unknown) {
-  const safeValue = String(value || '').trim()
-  return safeValue || null
 }
 
 function normalizeSelectedServerKeys(value: unknown) {
@@ -2146,8 +2231,8 @@ function fillScheduleForm(schedule: NodeCommandScheduleItem) {
     return
   }
 
-  const monitorServerKey = normalizeOptionalServerKey(schedule.payload?.monitorServerKey) || ''
   const startServerKeys = normalizeSelectedServerKeys(schedule.payload?.startServerKeys)
+  const notificationSettings = normalizeScheduleNotificationSettings(schedule.notificationSettings, schedule.commandType)
   const scheduleFields = resolveScheduleFormFields(
     schedule.scheduleConfig,
     schedule.intervalMinutes,
@@ -2162,7 +2247,8 @@ function fillScheduleForm(schedule: NodeCommandScheduleItem) {
     ...scheduleFields,
     isActive: schedule.isActive,
     notificationChannelKeys: Array.isArray(schedule.notificationChannelKeys) ? [...schedule.notificationChannelKeys] : [],
-    monitorServerKey,
+    notificationQueuedMode: notificationSettings.queued,
+    notificationFinishedMode: notificationSettings.finished,
     startServerKeys,
     rconGroup: String(schedule.payload?.group || 'ALL'),
     rconCommand: String(schedule.payload?.command || ''),
@@ -2209,6 +2295,7 @@ async function saveSchedule() {
       commandType: scheduleForm.value.commandType,
       payload: buildSchedulePayload(),
       notificationChannelKeys: scheduleForm.value.notificationChannelKeys,
+      notificationSettings: buildScheduleNotificationSettings(scheduleForm.value),
       scheduleConfig: buildScheduleConfigFromForm(scheduleForm.value),
       isActive: scheduleForm.value.isActive,
     }
@@ -2464,7 +2551,6 @@ watch(
     selectedGroup.value = 'ALL'
     selectedServerKeys.value = []
     nodeCommandForm.value.rconServerKeys = []
-    maintenanceCommandForm.value.monitorServerKey = ''
     maintenanceCommandForm.value.startServerKeys = []
   },
 )
@@ -2484,12 +2570,6 @@ watch(
     nodeCommandForm.value.rconServerKeys = nodeCommandForm.value.rconServerKeys.filter((key) =>
       selectedNodeServers.value.some((server) => server.key === key),
     )
-    if (
-      maintenanceCommandForm.value.monitorServerKey
-      && !selectedNodeServers.value.some((server) => server.key === maintenanceCommandForm.value.monitorServerKey)
-    ) {
-      maintenanceCommandForm.value.monitorServerKey = ''
-    }
     maintenanceCommandForm.value.startServerKeys = maintenanceCommandForm.value.startServerKeys.filter((key) =>
       selectedNodeServers.value.some((server) => server.key === key),
     )
@@ -2524,14 +2604,36 @@ watch(
 )
 
 watch(
+  () => scheduleForm.value.commandType,
+  (nextCommandType, previousCommandType) => {
+    const currentForm = scheduleForm.value
+
+    if (!currentForm.id && previousCommandType) {
+      const previousDefaults = defaultNotificationSettingsForCommand(previousCommandType)
+      if (
+        currentForm.notificationQueuedMode === previousDefaults.queued
+        && currentForm.notificationFinishedMode === previousDefaults.finished
+      ) {
+        const nextDefaults = defaultNotificationSettingsForCommand(nextCommandType)
+        currentForm.notificationQueuedMode = nextDefaults.queued
+        currentForm.notificationFinishedMode = nextDefaults.finished
+      }
+    }
+
+    if (nextCommandType !== 'node.rcon_command') {
+      currentForm.rconCommand = ''
+      currentForm.rconGroup = 'ALL'
+    }
+
+    if (!commandSupportsStartTargets(nextCommandType)) {
+      currentForm.startServerKeys = []
+    }
+  },
+)
+
+watch(
   () => selectedScheduleFormServers.value,
   () => {
-    if (
-      scheduleForm.value.monitorServerKey
-      && !selectedScheduleFormServers.value.some((server) => server.key === scheduleForm.value.monitorServerKey)
-    ) {
-      scheduleForm.value.monitorServerKey = ''
-    }
     scheduleForm.value.startServerKeys = scheduleForm.value.startServerKeys.filter((key) =>
       selectedScheduleFormServers.value.some((server) => server.key === key),
     )
@@ -3261,6 +3363,24 @@ onBeforeUnmount(() => {
                       placeholder="不选择则不推送 Gotify"
                     />
                   </NFormItem>
+                  <NFormItem label="触发时通知">
+                    <NSelect
+                      v-model:value="scheduleForm.notificationQueuedMode"
+                      :options="scheduleQueuedNotificationModeOptions"
+                    />
+                  </NFormItem>
+                  <NFormItem label="完成后通知">
+                    <NSelect
+                      v-model:value="scheduleForm.notificationFinishedMode"
+                      :options="scheduleFinishedNotificationModeOptions"
+                    />
+                  </NFormItem>
+                  <NFormItem label="通知规则" class="col-span-full">
+                    <div class="agent-schedule-rule-note">
+                      <strong>{{ scheduleNotificationSummary }}</strong>
+                      <span>{{ scheduleNotificationHint }}</span>
+                    </div>
+                  </NFormItem>
                   <NFormItem
                     v-if="commandSupportsStartTargets(scheduleForm.commandType)"
                     label="崩溃检查成功后启动"
@@ -3277,7 +3397,7 @@ onBeforeUnmount(() => {
                     />
                   </NFormItem>
                   <NFormItem
-                    v-if="commandSupportsMonitorServer(scheduleForm.commandType) || commandSupportsStartTargets(scheduleForm.commandType)"
+                    v-if="scheduleForm.commandType === 'node.monitor_check' || commandSupportsStartTargets(scheduleForm.commandType)"
                     label="执行说明"
                     class="col-span-full"
                   >
@@ -3374,6 +3494,15 @@ onBeforeUnmount(() => {
                           schedule.notificationChannelKeys?.length
                             ? resolveGotifyChannelNames(schedule.notificationChannelKeys).join(' / ')
                             : '不推送'
+                        }}
+                      </div>
+
+                      <div class="agent-command-card__summary">
+                        通知规则:
+                        {{
+                          schedule.notificationChannelKeys?.length
+                            ? describeNotificationSettings(schedule.notificationSettings, schedule.commandType)
+                            : '未启用'
                         }}
                       </div>
 
