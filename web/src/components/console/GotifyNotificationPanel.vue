@@ -73,6 +73,35 @@ const templateVariableRows = [
   { key: '{{ resultJson }}', label: '执行结果', description: '命令结果 JSON 摘要。' },
 ]
 
+async function copyTemplateVariable(value: string) {
+  const text = String(value || '').trim()
+
+  if (!text) {
+    pushToast('没有可复制的模板变量', 'info')
+    return
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.setAttribute('readonly', 'true')
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+
+    pushToast(`${text} 已复制`, 'success')
+  } catch {
+    pushToast('模板变量复制失败', 'error')
+  }
+}
+
 const canCreate = computed(() => props.canCreate !== false)
 const canManage = computed(() => props.canManage !== false)
 const canTest = computed(() => props.canTest !== false)
@@ -675,10 +704,19 @@ watch(
             </div>
 
             <div class="gotify-template-list">
-              <div v-for="item in templateVariableRows" :key="item.key" class="gotify-template-item">
-                <strong>{{ item.key }}</strong>
-                <span>{{ item.label }} · {{ item.description }}</span>
-              </div>
+              <button
+                v-for="item in templateVariableRows"
+                :key="item.key"
+                type="button"
+                class="gotify-template-item"
+                @click="copyTemplateVariable(item.key)"
+              >
+                <div class="gotify-template-item__head">
+                  <strong>{{ item.key }}</strong>
+                  <span class="gotify-template-item__copy">点击复制</span>
+                </div>
+                <span class="gotify-template-item__meta">{{ item.label }} · {{ item.description }}</span>
+              </button>
             </div>
           </section>
 
@@ -1067,16 +1105,42 @@ watch(
 
 .gotify-template-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
 .gotify-template-item {
   display: grid;
   gap: 4px;
+  width: 100%;
   padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: var(--app-radius-md);
   background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+.gotify-template-item:hover {
+  border-color: rgba(126, 178, 255, 0.28);
+  background: rgba(126, 178, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.gotify-template-item:focus-visible {
+  outline: 0;
+  border-color: rgba(126, 178, 255, 0.42);
+  box-shadow: 0 0 0 2px rgba(126, 178, 255, 0.16);
+}
+
+.gotify-template-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .gotify-template-item strong {
@@ -1085,7 +1149,14 @@ watch(
   font-family: var(--app-font-number);
 }
 
-.gotify-template-item span {
+.gotify-template-item__copy {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #7eb2ff;
+  line-height: 1.2;
+}
+
+.gotify-template-item__meta {
   font-size: 12px;
   color: var(--app-text-muted);
   line-height: 1.7;
@@ -1191,6 +1262,10 @@ watch(
 }
 
 @media (max-width: 768px) {
+  .gotify-template-list {
+    grid-template-columns: 1fr;
+  }
+
   .gotify-panel__actions,
   .gotify-channel-card__actions,
   .gotify-channel-card__header,
